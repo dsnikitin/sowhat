@@ -1,0 +1,5 @@
+{
+	"migrations_path": "./migrations",
+	"log_level": "info",
+	"is_develop": true
+}
