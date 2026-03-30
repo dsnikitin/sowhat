@@ -8,14 +8,19 @@ import (
 
 var Log = zap.Must(zap.NewDevelopment()).Sugar()
 
-func Setup(level string, isDevelop bool) error {
-	lvl, err := zap.ParseAtomicLevel(level)
+type Config struct {
+	Level     string `env:"LEVEL" yaml:"level"`
+	IsDevelop bool   `env:"IS_DEVELOP" yaml:"is_develop"`
+}
+
+func Setup(cfg *Config) error {
+	lvl, err := zap.ParseAtomicLevel(cfg.Level)
 	if err != nil {
 		return errors.Wrap(err, "parse level")
 	}
 
 	var zapCfg zap.Config
-	if isDevelop {
+	if cfg.IsDevelop {
 		zapCfg = zap.NewDevelopmentConfig()
 	} else {
 		zapCfg = zap.NewProductionConfig()

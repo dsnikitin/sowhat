@@ -1,0 +1,10 @@
+telegram_bot:
+  poller_timeout: 10s
+salute: {}
+gigachat: {}
+postgres_db:
+  dsn: postgres://postgres:postgres_pass@localhost:5432/sowhat
+  migrations_path: ./migrations
+log:
+  log_level: info
+  is_develop: true
