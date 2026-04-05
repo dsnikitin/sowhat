@@ -1,9 +1,16 @@
 package service
 
-import "context"
+import (
+	"context"
+
+	"github.com/dsnikitin/sowhat/consts/platform"
+	"github.com/dsnikitin/sowhat/internal/models"
+	"github.com/pkg/errors"
+)
 
 type UserRepository interface {
-	Create(ctx context.Context, id int64, name string) error
+	CreateUser(ctx context.Context, externalID, name string, pt platform.Type) error
+	GetUser(ctx context.Context, externalID string, pt platform.Type) (models.User, error)
 }
 
 type UserService struct {
@@ -14,6 +21,20 @@ func NewUserService(r UserRepository) *UserService {
 	return &UserService{r: r}
 }
 
-func (us *UserService) RegisterUser(ctx context.Context, id int64, name string) error {
-	return us.r.Create(ctx, id, name)
+func (s *UserService) RegisterUser(ctx context.Context, externalID, name string, pt platform.Type) error {
+	return s.r.CreateUser(ctx, externalID, name, pt)
+}
+
+func (s *UserService) IdentityUser(ctx context.Context, pt platform.Type, externalUserID string) (int64, error) {
+	switch pt {
+	case platform.Telegram:
+		user, err := s.r.GetUser(ctx, externalUserID, pt)
+		if err != nil {
+			return 0, errors.Wrap(err, "get user")
+		}
+
+		return user.ID, nil
+	default:
+		return 0, errors.Errorf("unsupported platform %s", pt)
+	}
 }

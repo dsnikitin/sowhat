@@ -4,45 +4,67 @@ import (
 	"context"
 	"time"
 
-	"github.com/dsnikitin/sowhat/internal/bot/telegram"
-	"github.com/dsnikitin/sowhat/internal/bot/telegram/handler"
 	"github.com/dsnikitin/sowhat/internal/config"
-	"github.com/dsnikitin/sowhat/internal/infra/db/postgres"
+	"github.com/dsnikitin/sowhat/internal/infrastructure/db/postgres"
+	"github.com/dsnikitin/sowhat/internal/infrastructure/llm/gigachat"
+	"github.com/dsnikitin/sowhat/internal/infrastructure/oauth"
+	"github.com/dsnikitin/sowhat/internal/infrastructure/transcriber/salute"
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
 	"github.com/dsnikitin/sowhat/internal/repository"
 	"github.com/dsnikitin/sowhat/internal/service"
-	"github.com/dsnikitin/sowhat/internal/usecase"
-	"github.com/pkg/errors"
+	"github.com/dsnikitin/sowhat/internal/transport/telegram"
+	"github.com/dsnikitin/sowhat/internal/transport/telegram/handler"
 )
 
 type App struct {
-	TeleBot *telegram.Bot
-	PgDB    *postgres.DB
+	pgDB         *postgres.DB
+	authorizer   *oauth.Authorizer
+	saluteSpeech *salute.SaluteSpeech
+	gigachat     *gigachat.GigaChat
+	teleBot      *telegram.Bot
+	ctxCancel    context.CancelFunc
 }
 
 func New(cfg *config.Config) *App {
-	pgdb, err := postgres.New(cfg.PgDB)
+	appCtx, appCtxCancel := context.WithCancel(context.Background())
+
+	pgDB, err := postgres.New(cfg.PgDB)
 	if err != nil {
-		logger.Log.Fatalw("Failed to connect to postgres db", "error", err.Error())
+		logger.Log.Fatalw("Failed to init postgres db", "error", err.Error())
 	}
 
-	if err := pgdb.ApplyMigrations(); err != nil {
+	if err := pgDB.ApplyMigrations(); err != nil {
 		logger.Log.Fatalw("Failed to apply migrations", "error", err.Error())
 	}
 
-	tbot, err := initTelegramBot(cfg.TeleBot, pgdb)
+	authorizer, err := oauth.New(appCtx, cfg.OAuth)
+	if err != nil {
+		logger.Log.Fatalw("Failed to init authorizer", "error", err.Error())
+	}
+
+	saluteSpeech := salute.New(appCtx, cfg.SaluteSpeech, authorizer)
+	gigachat := gigachat.New(appCtx, cfg.GigaChat, authorizer)
+	r := repository.New(pgDB)
+	s := service.New(r, saluteSpeech, gigachat)
+	h := handler.New(cfg.TeleBot.UI, s)
+
+	telebot, err := telegram.New(appCtx, cfg.TeleBot, h, s)
 	if err != nil {
 		logger.Log.Fatalw("Failed to init telegram bot", "error", err.Error())
 	}
 
 	return &App{
-		TeleBot: tbot,
-		PgDB:    pgdb,
+		pgDB:         pgDB,
+		authorizer:   authorizer,
+		saluteSpeech: saluteSpeech,
+		gigachat:     gigachat,
+		teleBot:      telebot,
+		ctxCancel:    appCtxCancel,
 	}
 }
 
 func (a *App) Run() {
-	a.TeleBot.Start()
+	a.teleBot.Start()
 }
 
 func (a *App) Shutdown() {
@@ -53,12 +75,12 @@ func (a *App) Shutdown() {
 	}{
 		{
 			name:    "Telegram Bot",
-			stopFn:  a.TeleBot.Stop,
+			stopFn:  a.teleBot.Stop,
 			timeout: time.Second * 30,
 		},
 		{
 			name:    "Postgres DB",
-			stopFn:  a.PgDB.Close,
+			stopFn:  a.pgDB.Close,
 			timeout: time.Second * 30,
 		},
 	}
@@ -75,20 +97,4 @@ func (a *App) Shutdown() {
 
 		cancel()
 	}
-}
-
-func initTelegramBot(cfg *telegram.Config, db *postgres.DB) (*telegram.Bot, error) {
-	repo := repository.NewUserRepository(db)
-	userService := service.NewUserService(repo)
-
-	botHandler := handler.New(&handler.UseCases{
-		Users: handler.UserUseCases{
-			RegisterUserUseCase: usecase.NewRegisterUserUseCase(userService),
-		},
-		Meetings: handler.MeetingUseCases{},
-		Chat:     handler.ChatUseCases{},
-	})
-
-	bot, err := telegram.New(cfg, botHandler)
-	return bot, errors.Wrap(err, "new bot")
 }
