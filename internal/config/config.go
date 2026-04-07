@@ -2,7 +2,6 @@ package config
 
 import (
 	"flag"
-	"fmt"
 	"os"
 
 	"dario.cat/mergo"
@@ -52,17 +51,6 @@ func New() (*Config, error) {
 	if err := env.Parse(cfg); err != nil {
 		return nil, errors.Wrap(err, "parse envs")
 	}
-
-	// TODO убрать
-	fmt.Printf("CONFIG.TeleBot = %+v\n", cfg.TeleBot)
-	fmt.Printf("CONFIG.Salute = %+v\n", cfg.SaluteSpeech)
-	fmt.Printf("CONFIG.Salute.API = %+v\n", cfg.SaluteSpeech.RestAPI)
-	fmt.Printf("CONFIG.GigaChat = %+v\n", cfg.GigaChat)
-	fmt.Printf("CONFIG.GigaChat.API = %+v\n", cfg.GigaChat.RestAPI)
-	fmt.Printf("CONFIG.PgDB = %+v\n", cfg.PgDB)
-	fmt.Printf("CONFIG.Log = %+v\n", cfg.Log)
-	fmt.Printf("CONFIG.ConfigFilePath = %+v\n", cfg.ConfigFilePath)
-	fmt.Printf("CONFIG.OAuth = %+v\n", cfg.OAuth)
 
 	if err := cfg.validate(); err != nil {
 		return nil, errors.Wrap(err, "validate config")

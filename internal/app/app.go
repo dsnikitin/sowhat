@@ -71,6 +71,8 @@ func (a *App) Run() {
 }
 
 func (a *App) Shutdown() {
+	a.ctxCancel()
+
 	components := []struct {
 		name    string
 		timeout time.Duration

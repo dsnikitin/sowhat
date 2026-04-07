@@ -6,6 +6,7 @@ type Repository interface {
 	UserRepository
 	MeetingRepository
 	TranscriptionRepository
+	ChatRepository
 }
 
 type Service struct {
@@ -19,7 +20,7 @@ func New(appCtx context.Context, cfg *TranscriptionConfig, r Repository, t Trans
 	s := &Service{
 		UserService:          NewUserService(r),
 		TranscriptionService: NewTranscriptionService(appCtx, cfg, t, sum, r),
-		ChatService:          NewChatService(ch),
+		ChatService:          NewChatService(ch, r),
 	}
 
 	s.MeetingService = NewMeetingService(s.TranscriptionService, r)

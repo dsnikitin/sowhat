@@ -34,7 +34,7 @@ func (r *MeetingRepository) CreateMeeting(ctx context.Context, userID int64) (in
 }
 
 const getMeetingSQL = `
-	SELECT id, user_id, transcript, summary, is_transcription_failed, created_at, raw_transcript
+	SELECT id, user_id, transcript, summary, chatter_file_id, is_transcription_failed, created_at, raw_transcript
 	FROM sowhat.meetings
 	WHERE id = @id AND user_id = @userID
 `
@@ -48,7 +48,8 @@ func (r *MeetingRepository) GetMeeting(ctx context.Context, id, userID int64) (m
 }
 
 const listMeetingsSQL = `
-	SELECT id, user_id, transcript, summary, is_transcription_failed, created_at, raw_transcript, COUNT(*) OVER() AS total
+	SELECT id, user_id, transcript, summary, chatter_file_id, is_transcription_failed,
+		created_at, raw_transcript, COUNT(*) OVER() AS total
 	FROM sowhat.meetings
 	WHERE user_id = @userID
 	ORDER BY created_at DESC
@@ -65,7 +66,8 @@ func (r *MeetingRepository) ListMeetings(ctx context.Context, userID int64, limi
 }
 
 const findMeetingsSQL = `
-	SELECT id, user_id, transcript, summary, is_transcription_failed, created_at, raw_transcript, COUNT(*) OVER() AS total
+	SELECT id, user_id, transcript, summary, chatter_file_id, is_transcription_failed,
+		created_at, raw_transcript, COUNT(*) OVER() AS total
 	FROM sowhat.meetings
 	WHERE user_id = @userID
 		AND NOT is_transcription_failed
@@ -95,6 +97,7 @@ const updateMeetingSQL = `
 	UPDATE sowhat.meetings
 	SET transcript = @transcript,
 		summary = @summary,
+		chatter_file_id = @chatterFileID,
 		is_transcription_failed = @isTranscriptionFailed,
 		raw_transcript = @rawTranscript
 	WHERE id = @id
@@ -105,6 +108,7 @@ func (r *MeetingRepository) UpdateMeeting(ctx context.Context, meeting models.Me
 		"id":                    meeting.ID,
 		"transcript":            meeting.Transcript,
 		"summary":               meeting.Summary,
+		"chatterFileID":         meeting.ChatterFileId,
 		"isTranscriptionFailed": meeting.IsTranscriptionFailed,
 		"rawTranscript":         meeting.RawTranscript,
 	}
@@ -121,62 +125,16 @@ func (r *MeetingRepository) UpdateMeeting(ctx context.Context, meeting models.Me
 	return nil
 }
 
-// const setTranscriptSQL = `
-// 	UPDATE sowhat.meetings
-// 	SET transcript = @transcript
-// 	WHERE id = @meetingID
-// `
+const getFileIDsSQL = `
+	SELECT chatter_file_id
+	FROM sowhat.meetings
+	WHERE user_id = @userID
+`
 
-// func (r *MeetingRepository) SetTranscript(ctx context.Context, meetingID int64, transcript string) error {
-// 	args := pgx.NamedArgs{"meetingID": meetingID, "transcript": transcript}
-// 	res, err := r.db.Exec(ctx, setTranscriptSQL, args)
-// 	if err != nil {
-// 		return errors.Wrap(err, "exec")
-// 	}
+func (r *MeetingRepository) GetFileIDs(ctx context.Context, userID int64) ([]string, error) {
+	args := pgx.NamedArgs{"userID": userID}
+	fieldsPointer := func(id *string) []any { return []any{id} }
 
-// 	if res.RowsAffected() == 0 {
-// 		return errx.ErrNotFound
-// 	}
-
-// 	return nil
-// }
-
-// const setSummarySQL = `
-// 	UPDATE sowhat.meetings
-// 	SET summary = @summary
-// 	WHERE id = @meetingID
-// `
-
-// func (r *MeetingRepository) SetSummary(ctx context.Context, meetingID int64, summary string) error {
-// 	args := pgx.NamedArgs{"meetingID": meetingID, "summary": summary}
-// 	res, err := r.db.Exec(ctx, setSummarySQL, args)
-// 	if err != nil {
-// 		return errors.Wrap(err, "exec")
-// 	}
-
-// 	if res.RowsAffected() == 0 {
-// 		return errx.ErrNotFound
-// 	}
-
-// 	return nil
-// }
-
-// const setTranscriptionFailedSQL = `
-// 	UPDATE sowhat.meetings
-// 	SET is_transcription_failed = @value
-// 	WHERE id = @meetingID
-// `
-
-// func (r *MeetingRepository) SetTranscriptionFailed(ctx context.Context, meetingID int64, value bool) error {
-// 	args := pgx.NamedArgs{"meetingID": meetingID, "value": value}
-// 	res, err := r.db.Exec(ctx, setTranscriptionFailedSQL, args)
-// 	if err != nil {
-// 		return errors.Wrap(err, "exec")
-// 	}
-
-// 	if res.RowsAffected() == 0 {
-// 		return errx.ErrNotFound
-// 	}
-
-// 	return nil
-// }
+	ids, err := postgres.Query(ctx, r.db, getFileIDsSQL, args, fieldsPointer)
+	return ids, errors.Wrap(err, "query")
+}

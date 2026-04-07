@@ -8,3 +8,7 @@ type CompletionsResponse struct {
 		Index int `json:"index"`
 	} `json:"choices"`
 }
+
+type UploadResponse struct {
+	FileId string `json:"id"`
+}

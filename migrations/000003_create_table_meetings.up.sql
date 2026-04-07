@@ -3,6 +3,7 @@ CREATE table IF NOT EXISTS sowhat.meetings(
     user_id BIGINT REFERENCES sowhat.users(id) ON UPDATE CASCADE ON DELETE RESTRICT,
     transcript TEXT,
     summary TEXT,
+	chatter_file_id TEXT,
 	transcript_tsv TSVECTOR GENERATED ALWAYS AS (to_tsvector('russian', transcript)) STORED,
 	is_transcription_failed BOOLEAN NOT NULL DEFAULT false,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),

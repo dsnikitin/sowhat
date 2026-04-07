@@ -8,6 +8,7 @@ type Repository struct {
 	*UserRepository
 	*MeetingRepository
 	*TranscriptionRepository
+	*ChatRepository
 }
 
 func New(db *postgres.DB) *Repository {
@@ -15,5 +16,6 @@ func New(db *postgres.DB) *Repository {
 		UserRepository:          NewUserRepository(db),
 		MeetingRepository:       NewMeetingRepository(db),
 		TranscriptionRepository: NewTranscriptionRepository(db),
+		ChatRepository:          NewChatRepository(db),
 	}
 }

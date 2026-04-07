@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 
+	"github.com/dsnikitin/sowhat/internal/models"
 	"github.com/dsnikitin/sowhat/internal/pkg/httpx"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -38,12 +41,40 @@ func (g *GigaChat) Summarize(transcript string) (string, error) {
 		{Role: "user", Content: transcript},
 	}
 
-	return "ЗАГЛУШКА", nil
-
-	return g.complete(msgs)
+	headers := make(map[string]string)
+	return g.complete(msgs, headers)
 }
 
-func (g *GigaChat) complete(msgs []Message) (string, error) {
+func (g *GigaChat) Chat(
+	ctx context.Context, query string, fileIDs []string, history []models.ChatMessage,
+) (models.ChatMessage, error) {
+	msgs := make([]Message, 0, len(history)+2)
+
+	msgs = append(msgs, Message{Role: "system", Content: chatAboutMeetingsSystemPrompt})
+	for _, m := range history {
+		msgs = append(msgs,
+			Message{Role: "user", Content: query},
+			Message{Role: "assistant", Content: m.Answer},
+		)
+	}
+	msgs = append(msgs, Message{Role: "user", Content: query, Attachments: fileIDs})
+
+	sessionId := uuid.New().String()
+	headers := make(map[string]string)
+	if len(history) > 0 {
+		sessionId = history[0].ChatID
+		headers["X-Session-ID"] = sessionId
+	}
+
+	answer, err := g.complete(msgs, headers)
+	if err != nil {
+		return models.ChatMessage{}, errors.Wrap(err, "complete")
+	}
+
+	return models.ChatMessage{ChatID: sessionId, Query: query, Answer: answer}, nil
+}
+
+func (g *GigaChat) complete(msgs []Message, headers map[string]string) (string, error) {
 	accessToken, err := g.authorizer.GetAccessToken(g.cfg.OAuth.AuthToken)
 	if err != nil {
 		return "", errors.Wrap(err, "get access token")
@@ -54,11 +85,9 @@ func (g *GigaChat) complete(msgs []Message) (string, error) {
 		return "", errors.Wrap(err, "marshal request body")
 	}
 
-	headers := map[string]string{
-		"Content-Type":  "application/json",
-		"Accept":        "application/json",
-		"Authorization": "Bearer " + accessToken,
-	}
+	headers["Authorization"] = "Bearer " + accessToken
+	headers["Content-Type"] = "application/json"
+	headers["Accept"] = "application/json"
 
 	var res CompletionsResponse
 	err = g.client.DoRequestWithContext(
@@ -67,10 +96,55 @@ func (g *GigaChat) complete(msgs []Message) (string, error) {
 		return "", errors.Wrap(err, "do http request with context")
 	}
 
+	fmt.Printf("ANSWER = %+v\n", res)
+
 	return res.Choices[0].Message.Content, nil
 }
 
-func (g *GigaChat) UploadFile(data io.Reader) (uuid.UUID, error) {
-	// возвращает fileID
-	return uuid.Nil, nil
+func (g *GigaChat) UploadFile(fileContent io.Reader, contentType string) (string, error) {
+	accessToken, err := g.authorizer.GetAccessToken(g.cfg.OAuth.AuthToken)
+	if err != nil {
+		return "", errors.Wrap(err, "get access token")
+	}
+
+	body, contentType, err := buildMultipartBody(fileContent)
+	if err != nil {
+		return "", errors.Wrap(err, "build multipart body")
+	}
+
+	headers := map[string]string{
+		"Content-Type":  contentType,
+		"Accept":        "application/json",
+		"Authorization": "Bearer " + accessToken,
+	}
+
+	var res UploadResponse
+	err = g.client.DoRequestWithContext(
+		g.appCtx, http.MethodPost, g.cfg.RestAPI.UploadFile, headers, body, &res)
+	if err != nil {
+		return "", errors.Wrap(err, "do http request with context")
+	}
+
+	return res.FileId, nil
+}
+
+func buildMultipartBody(fileContent io.Reader) (*bytes.Buffer, string, error) {
+	body := &bytes.Buffer{}
+	writer := multipart.NewWriter(body)
+	defer writer.Close()
+
+	if err := writer.WriteField("purpose", "general"); err != nil {
+		return nil, "", errors.Wrap(err, "write purpose filed")
+	}
+
+	part, err := writer.CreateFormFile("file", "file.txt")
+	if err != nil {
+		return nil, "", errors.Wrap(err, "create form-data")
+	}
+
+	if _, err := io.Copy(part, fileContent); err != nil {
+		return nil, "", errors.Wrap(err, "copy file content")
+	}
+
+	return body, writer.FormDataContentType(), nil
 }

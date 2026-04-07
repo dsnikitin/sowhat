@@ -10,13 +10,17 @@ type Meeting struct {
 	UserID                int64
 	Transcript            *string
 	Summary               *string
+	ChatterFileId         *string
 	IsTranscriptionFailed bool
 	CreatedAt             time.Time
 	RawTranscript         *string
 }
 
 func (m *Meeting) ScanFields() []any {
-	return []any{&m.ID, &m.UserID, &m.Transcript, &m.Summary, &m.IsTranscriptionFailed, &m.CreatedAt, &m.RawTranscript}
+	return []any{
+		&m.ID, &m.UserID, &m.Transcript, &m.Summary, &m.ChatterFileId,
+		&m.IsTranscriptionFailed, &m.CreatedAt, &m.RawTranscript,
+	}
 }
 
 func (m Meeting) MarshalJSON() ([]byte, error) {

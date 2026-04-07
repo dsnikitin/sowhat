@@ -32,6 +32,10 @@ type Summarizer interface {
 	Summarize(text string) (string, error)
 }
 
+type ChatUploader interface {
+	UploadFile(file io.Reader, contentType string) (string, error)
+}
+
 type TranscriptionRepository interface {
 	CreateTranscription(ctx context.Context, meetingID int64) error
 	UpdateTranscription(ctx context.Context, tr models.Transcription) error
@@ -53,11 +57,13 @@ type TranscriptionService struct {
 	pollStage      chan (models.Transcription)
 	downloadStage  chan (models.Transcription)
 	summarizeStage chan (models.Transcription)
+	chatStage      chan (models.Transcription)
 	finalizeStage  chan (models.Transcription)
 	stopCh         chan (struct{})
 	eg             errgroup.Group
 	t              Transcriber
 	sum            Summarizer
+	ch             ChatUploader
 	r              TranscriptionRepository
 	mu             sync.RWMutex
 	subscribers    map[uuid.UUID]Subscriber
@@ -76,6 +82,7 @@ func NewTranscriptionService(
 		pollStage:      make(chan models.Transcription, cfg.QueueLimit),
 		downloadStage:  make(chan models.Transcription, cfg.QueueLimit),
 		summarizeStage: make(chan models.Transcription, cfg.QueueLimit),
+		chatStage:      make(chan models.Transcription, cfg.QueueLimit),
 		finalizeStage:  make(chan models.Transcription, cfg.QueueLimit),
 		stopCh:         make(chan struct{}),
 		t:              tr,
@@ -97,6 +104,7 @@ func (s *TranscriptionService) start() {
 		s.eg.Go(s.poll)
 		s.eg.Go(s.download)
 		s.eg.Go(s.summarize)
+		s.eg.Go(s.chat)
 		s.eg.Go(s.finalize)
 	}
 
@@ -380,7 +388,7 @@ func (s *TranscriptionService) summarize() error {
 				logStageResult("Summarize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
 			}
 
-			err := s.persistAndForward(&tr, s.summarizeStage, s.finalizeStage, stageErr, func() error {
+			err := s.persistAndForward(&tr, s.summarizeStage, s.chatStage, stageErr, func() error {
 				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
 				defer cancel()
 
@@ -392,6 +400,34 @@ func (s *TranscriptionService) summarize() error {
 	}
 }
 
+func (s *TranscriptionService) chat() error {
+	for {
+		select {
+		case <-s.stopCh:
+			return nil
+		case tr := <-s.chatStage:
+			var stageErr error
+			if tr.Meeting.ChatterFileId == nil {
+				stageErr = s.doStage(&tr, func() error {
+					fileID, err := s.ch.UploadFile(strings.NewReader(*tr.Meeting.Transcript), "text/plain")
+					tr.Meeting.ChatterFileId = &fileID
+					return errors.Wrap(err, "upload file to chatter")
+				})
+				logStageResult("Chat", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
+			}
+
+			err := s.persistAndForward(&tr, s.chatStage, s.finalizeStage, stageErr, func() error {
+				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
+				defer cancel()
+
+				err := s.r.UpdateMeeting(ctx, tr.Meeting)
+				return errors.Wrap(err, "update meeting")
+			})
+			logFrowardOrRetryResult("Chat", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
+		}
+	}
+}
+
 func (s *TranscriptionService) finalize() error {
 	for {
 		select {
@@ -399,7 +435,7 @@ func (s *TranscriptionService) finalize() error {
 			return nil
 		case tr := <-s.finalizeStage:
 			var stageErr error
-			if tr.Meeting.IsTranscriptionFailed && !tr.IsCompleted {
+			if tr.Meeting.IsTranscriptionFailed {
 				stageErr = s.doStage(&tr, func() error {
 					ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
 					defer cancel()
@@ -408,7 +444,6 @@ func (s *TranscriptionService) finalize() error {
 						return errors.Wrap(err, "update meeting")
 					}
 
-					tr.IsCompleted = true
 					return nil
 				})
 				logStageResult("Finalize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
@@ -423,7 +458,13 @@ func (s *TranscriptionService) finalize() error {
 
 				s.publishTranscriptionCompletedEvent(msg)
 				s.deleteSubscription(tr.Meeting.ID)
-				return nil
+
+				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
+				defer cancel()
+
+				tr.IsCompleted = true
+				err := s.r.UpdateTranscription(ctx, tr)
+				return errors.Wrap(err, "update transcription")
 			})
 			logFrowardOrRetryResult("Finalize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
 		}

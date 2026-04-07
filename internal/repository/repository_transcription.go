@@ -58,7 +58,7 @@ func (r *TranscriptionRepository) UpdateTranscription(ctx context.Context, tr mo
 }
 
 const getNotCompletedTranscriptionsSQL = `
-	SELECT m.id, m.user_id, m.transcript, m.summary, m.is_transcription_failed, m.created_at,
+	SELECT m.id, m.user_id, m.transcript, m.summary, m.chatter_file_id, m.is_transcription_failed, m.created_at,
 		t.transcriber_rq_file_id, t.transcriber_task_id, t.transcriber_rs_file_id, t.raw_transcript
 	FROM sowhat.transcriptions t
 	INNER JOIN sowhat.meetings m ON t.meeting_id = m.id

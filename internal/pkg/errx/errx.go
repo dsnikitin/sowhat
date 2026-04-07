@@ -6,15 +6,14 @@ import (
 )
 
 var (
-	ErrInternalServer              = errors.New("internal server error")
 	ErrAlreadyExists               = errors.New("already exists")
 	ErrNotFound                    = errors.New("not found")
 	ErrAllWorkersBusy              = errors.New("all workers are busy")
-	ErrToManyRequests              = errors.New("too many requests")
 	ErrAccessTokenExpired          = errors.New("access token expired")
 	ErrRecognitionTaskNotCompleted = errors.New("recognition task is not completed")
 	ErrRecognitionTaskFailed       = errors.New("recognition is failed")
 	ErrTooEarly                    = errors.New("too early")
+	ErrNoFilesForQuestion          = errors.New("no files for question")
 )
 
 type ErrUnsupportedAudioFormat struct {
