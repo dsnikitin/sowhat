@@ -1,14 +1,14 @@
 package service
 
-type ChatAI interface {
+type Chatter interface {
 }
 
 type ChatService struct {
-	ai ChatAI
+	ch Chatter
 }
 
-func NewChatService(ai ChatAI) *ChatService {
-	return &ChatService{ai: ai}
+func NewChatService(ch Chatter) *ChatService {
+	return &ChatService{ch: ch}
 }
 
 func (s *ChatService) Chat(query string) (string, error) {

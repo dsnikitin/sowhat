@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strconv"
 
-	"github.com/dsnikitin/sowhat/consts/platform"
+	"github.com/dsnikitin/sowhat/internal/consts/platform"
 	"github.com/dsnikitin/sowhat/internal/pkg/errx"
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
 	"github.com/dsnikitin/sowhat/internal/transport/telegram/consts/ctxkey"
@@ -39,7 +39,7 @@ func Identity(service IdentityService) telebot.MiddlewareFunc {
 					return botCtx.Send(message.IdentificationFailed, telebot.ModeMarkdown)
 				case errors.Is(err, context.DeadlineExceeded):
 					logger.Log.Warnw("Failed to identity user", "error", err.Error(), "telegram_user_id", sender.ID)
-					return botCtx.Send(message.OperationTimeout, telebot.ModeMarkdown)
+					return botCtx.Send(message.TooBusy, telebot.ModeMarkdown)
 				default:
 					logger.Log.Errorw("Failed to identity user", "error", err.Error())
 					return botCtx.Send(message.OperationFailed, telebot.ModeMarkdown)

@@ -12,6 +12,7 @@ import (
 	"github.com/dsnikitin/sowhat/internal/infrastructure/oauth"
 	"github.com/dsnikitin/sowhat/internal/infrastructure/transcriber/salute"
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
+	"github.com/dsnikitin/sowhat/internal/service"
 	telebot "github.com/dsnikitin/sowhat/internal/transport/telegram"
 	validation "github.com/go-ozzo/ozzo-validation/v4"
 	"github.com/pkg/errors"
@@ -19,22 +20,24 @@ import (
 )
 
 type Config struct {
-	TeleBot        *telebot.Config  `envPrefix:"TELEGRAM_BOT_" yaml:"telegram_bot"`
-	SaluteSpeech   *salute.Config   `envPrefix:"SALUTE_SPEECH_" yaml:"salute_speech"`
-	GigaChat       *gigachat.Config `envPrefix:"GIGACHAT_" yaml:"gigachat"`
-	PgDB           *postgres.Config `envPrefix:"POSTGRES_DB_" yaml:"postgres_db"`
-	Log            *logger.Config   `envPrefix:"LOG_" yaml:"log"`
-	ConfigFilePath string           `env:"CONFIG_FILE"`
+	TeleBot        *telebot.Config              `envPrefix:"TELEGRAM_BOT_" yaml:"telegram_bot"`
+	SaluteSpeech   *salute.Config               `envPrefix:"SALUTE_SPEECH_" yaml:"salute_speech"`
+	GigaChat       *gigachat.Config             `envPrefix:"GIGACHAT_" yaml:"gigachat"`
+	PgDB           *postgres.Config             `envPrefix:"POSTGRES_DB_" yaml:"postgres_db"`
+	Log            *logger.Config               `envPrefix:"LOG_" yaml:"log"`
+	Transcription  *service.TranscriptionConfig `envPrefix:"TRANSCRIPTION_SERVICE_" yaml:"transcription_service"`
+	ConfigFilePath string                       `env:"CONFIG_FILE"`
 	OAuth          []*oauth.Config
 }
 
 func New() (*Config, error) {
 	cfg := &Config{
-		TeleBot:      &telebot.Config{},
-		SaluteSpeech: &salute.Config{},
-		GigaChat:     &gigachat.Config{},
-		PgDB:         &postgres.Config{},
-		Log:          &logger.Config{},
+		TeleBot:       &telebot.Config{},
+		SaluteSpeech:  &salute.Config{},
+		GigaChat:      &gigachat.Config{},
+		PgDB:          &postgres.Config{},
+		Log:           &logger.Config{},
+		Transcription: &service.TranscriptionConfig{},
 	}
 
 	flag.StringVar(&cfg.ConfigFilePath, "c", "config.yaml", "path to config yaml-file")
@@ -84,6 +87,9 @@ func (c Config) validate() error {
 		validation.Field(&c.PgDB, validation.By(func(any) error {
 			return c.PgDB.Validate()
 		})),
+		validation.Field(&c.Transcription, validation.By(func(any) error {
+			return c.Transcription.Validate()
+		})),
 	)
 }
 
@@ -95,11 +101,12 @@ func loadFromYAMLFile(cfg *Config) error {
 	}
 
 	fileCfg := &Config{
-		TeleBot:      &telebot.Config{},
-		SaluteSpeech: &salute.Config{},
-		GigaChat:     &gigachat.Config{},
-		PgDB:         &postgres.Config{},
-		Log:          &logger.Config{},
+		TeleBot:       &telebot.Config{},
+		SaluteSpeech:  &salute.Config{},
+		GigaChat:      &gigachat.Config{},
+		PgDB:          &postgres.Config{},
+		Log:           &logger.Config{},
+		Transcription: &service.TranscriptionConfig{},
 	}
 
 	if err = yaml.Unmarshal(data, fileCfg); err != nil {

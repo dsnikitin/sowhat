@@ -9,11 +9,11 @@ import (
 	"github.com/dsnikitin/sowhat/internal/infrastructure/llm/gigachat"
 	"github.com/dsnikitin/sowhat/internal/infrastructure/oauth"
 	"github.com/dsnikitin/sowhat/internal/infrastructure/transcriber/salute"
+	"github.com/dsnikitin/sowhat/internal/pkg/httpx"
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
 	"github.com/dsnikitin/sowhat/internal/repository"
 	"github.com/dsnikitin/sowhat/internal/service"
 	"github.com/dsnikitin/sowhat/internal/transport/telegram"
-	"github.com/dsnikitin/sowhat/internal/transport/telegram/handler"
 )
 
 type App struct {
@@ -37,21 +37,24 @@ func New(cfg *config.Config) *App {
 		logger.Log.Fatalw("Failed to apply migrations", "error", err.Error())
 	}
 
-	authorizer, err := oauth.New(appCtx, cfg.OAuth)
+	httpClient := httpx.NewClient()
+
+	authorizer, err := oauth.New(appCtx, cfg.OAuth, httpClient)
 	if err != nil {
 		logger.Log.Fatalw("Failed to init authorizer", "error", err.Error())
 	}
 
-	saluteSpeech := salute.New(appCtx, cfg.SaluteSpeech, authorizer)
-	gigachat := gigachat.New(appCtx, cfg.GigaChat, authorizer)
+	saluteSpeech := salute.New(appCtx, cfg.SaluteSpeech, httpClient, authorizer)
+	gigachat := gigachat.New(appCtx, cfg.GigaChat, httpClient, authorizer)
 	r := repository.New(pgDB)
-	s := service.New(r, saluteSpeech, gigachat)
-	h := handler.New(cfg.TeleBot.UI, s)
+	s := service.New(appCtx, cfg.Transcription, r, saluteSpeech, gigachat, gigachat)
 
-	telebot, err := telegram.New(appCtx, cfg.TeleBot, h, s)
+	telebot, err := telegram.New(appCtx, cfg.TeleBot, s, s)
 	if err != nil {
 		logger.Log.Fatalw("Failed to init telegram bot", "error", err.Error())
 	}
+
+	s.Subscribe(telebot)
 
 	return &App{
 		pgDB:         pgDB,

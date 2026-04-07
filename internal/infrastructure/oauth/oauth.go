@@ -2,13 +2,13 @@ package oauth
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/dsnikitin/sowhat/internal/pkg/errx"
+	"github.com/dsnikitin/sowhat/internal/pkg/httpx"
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -17,7 +17,7 @@ import (
 
 type Authorizer struct {
 	appCtx context.Context
-	client *http.Client
+	client *httpx.Client
 	cfgs   []*Config
 	tokens map[string]*accessToken
 }
@@ -28,10 +28,10 @@ type accessToken struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
-func New(globalCtx context.Context, cfgs []*Config) (*Authorizer, error) {
+func New(appCtx context.Context, cfgs []*Config, client *httpx.Client) (*Authorizer, error) {
 	a := &Authorizer{
-		appCtx: globalCtx,
-		client: http.DefaultClient,
+		appCtx: appCtx,
+		client: client,
 		cfgs:   cfgs,
 		tokens: make(map[string]*accessToken, len(cfgs)),
 	}
@@ -68,30 +68,48 @@ func (a *Authorizer) GetAccessToken(authToken string) (string, error) {
 func (a *Authorizer) getAccessToken(cfg *Config) error {
 	logger.Log.Infof("Getting access token to %s...", cfg.Consumer)
 
-	req, err := http.NewRequestWithContext(a.appCtx, http.MethodPost, cfg.Endpoint, strings.NewReader("scope="+cfg.Scope))
-	if err != nil {
-		return errors.Wrap(err, "new http request")
+	headers := map[string]string{
+		"Content-Type":  "application/x-www-form-urlencoded",
+		"Accept":        "application/json",
+		"RqUID":         uuid.New().String(),
+		"Authorization": "Basic " + cfg.AuthToken,
 	}
-
-	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("RqUID", uuid.New().String())
-	req.Header.Add("Authorization", "Basic "+cfg.AuthToken)
-
-	resp, err := a.client.Do(req)
-	if err != nil {
-		return errors.Wrap(err, "do http request")
-	}
-	defer resp.Body.Close()
 
 	newToken := struct {
 		Token     string `json:"access_token"`
 		ExpiresAt int64  `json:"expires_at"`
 	}{}
 
-	if err := json.NewDecoder(resp.Body).Decode(&newToken); err != nil {
-		return errors.Wrap(err, "decode access token")
+	err := a.client.DoRequestWithContext(
+		a.appCtx, http.MethodPost, cfg.Endpoint, headers, strings.NewReader("scope="+cfg.Scope), &newToken)
+	if err != nil {
+		return errors.Wrap(err, "do http request with context")
 	}
+
+	// req, err := http.NewRequestWithContext(a.appCtx, http.MethodPost, cfg.Endpoint, strings.NewReader("scope="+cfg.Scope))
+	// if err != nil {
+	// 	return errors.Wrap(err, "new http request")
+	// }
+
+	// req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+	// req.Header.Add("Accept", "application/json")
+	// req.Header.Add("RqUID", uuid.New().String())
+	// req.Header.Add("Authorization", "Basic "+cfg.AuthToken)
+
+	// resp, err := a.client.Do(req)
+	// if err != nil {
+	// 	return errors.Wrap(err, "do http request")
+	// }
+	// defer resp.Body.Close()
+
+	// newToken := struct {
+	// 	Token     string `json:"access_token"`
+	// 	ExpiresAt int64  `json:"expires_at"`
+	// }{}
+
+	// if err := json.NewDecoder(resp.Body).Decode(&newToken); err != nil {
+	// 	return errors.Wrap(err, "decode access token")
+	// }
 
 	expiresAt := unixToTime(newToken.ExpiresAt)
 	if existingToken, ok := a.tokens[cfg.AuthToken]; !ok {

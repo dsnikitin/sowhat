@@ -7,11 +7,13 @@ import (
 type Repository struct {
 	*UserRepository
 	*MeetingRepository
+	*TranscriptionRepository
 }
 
 func New(db *postgres.DB) *Repository {
 	return &Repository{
-		UserRepository:    NewUserRepository(db),
-		MeetingRepository: NewMeetingRepository(db),
+		UserRepository:          NewUserRepository(db),
+		MeetingRepository:       NewMeetingRepository(db),
+		TranscriptionRepository: NewTranscriptionRepository(db),
 	}
 }

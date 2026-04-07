@@ -1,25 +1,28 @@
 package service
 
+import "context"
+
 type Repository interface {
 	UserRepository
 	MeetingRepository
-}
-
-type AI interface {
-	MeetingAI
-	ChatAI
+	TranscriptionRepository
 }
 
 type Service struct {
 	*UserService
 	*MeetingService
+	*TranscriptionService
 	*ChatService
 }
 
-func New(r Repository, t Transcriber, ai AI) *Service {
-	return &Service{
-		UserService:    NewUserService(r),
-		MeetingService: NewMeetingService(ai, t, r),
-		ChatService:    NewChatService(ai),
+func New(appCtx context.Context, cfg *TranscriptionConfig, r Repository, t Transcriber, sum Summarizer, ch Chatter) *Service {
+	s := &Service{
+		UserService:          NewUserService(r),
+		TranscriptionService: NewTranscriptionService(appCtx, cfg, t, sum, r),
+		ChatService:          NewChatService(ch),
 	}
+
+	s.MeetingService = NewMeetingService(s.TranscriptionService, r)
+
+	return s
 }

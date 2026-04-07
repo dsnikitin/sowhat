@@ -6,12 +6,17 @@ import (
 )
 
 type Meeting struct {
-	ID        int64 `json:"id"`
-	CreatedAt time.Time
+	ID                    int64
+	UserID                int64
+	Transcript            *string
+	Summary               *string
+	IsTranscriptionFailed bool
+	CreatedAt             time.Time
+	RawTranscript         *string
 }
 
 func (m *Meeting) ScanFields() []any {
-	return []any{&m.ID, &m.CreatedAt}
+	return []any{&m.ID, &m.UserID, &m.Transcript, &m.Summary, &m.IsTranscriptionFailed, &m.CreatedAt, &m.RawTranscript}
 }
 
 func (m Meeting) MarshalJSON() ([]byte, error) {
@@ -25,22 +30,4 @@ func (m Meeting) MarshalJSON() ([]byte, error) {
 	}
 
 	return json.Marshal(resp)
-}
-
-type MeetingWithTranscript struct {
-	Meeting
-	Transcript string `json:"transcript"`
-}
-
-func (m *MeetingWithTranscript) ScanFields() []any {
-	return append(m.Meeting.ScanFields(), &m.Transcript)
-}
-
-type MeetingWithSummary struct {
-	Meeting
-	Summary string `json:"summary"`
-}
-
-func (m *MeetingWithSummary) ScanFields() []any {
-	return append(m.Meeting.ScanFields(), &m.Summary)
 }

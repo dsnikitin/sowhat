@@ -1,7 +1,6 @@
 package main
 
 import (
-	"log"
 	"os"
 	"os/signal"
 	"syscall"
@@ -11,17 +10,7 @@ import (
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
 )
 
-var (
-	buildVersion string = "n/a"
-	buildDate    string = "n/a"
-	buildCommit  string = "n/a"
-)
-
 func main() {
-	log.Println("Build version:", buildVersion)
-	log.Println("Build date:", buildDate)
-	log.Println("Build commit:", buildCommit)
-
 	cfg, err := config.New()
 	if err != nil {
 		logger.Log.Fatalw("Failed to init config", "error", err.Error())

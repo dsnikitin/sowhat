@@ -3,7 +3,7 @@ package models
 import (
 	"time"
 
-	"github.com/dsnikitin/sowhat/consts/platform"
+	"github.com/dsnikitin/sowhat/internal/consts/platform"
 )
 
 type User struct {

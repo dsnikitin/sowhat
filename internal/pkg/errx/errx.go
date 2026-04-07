@@ -1,14 +1,60 @@
 package errx
 
-import "github.com/pkg/errors"
+import (
+	"github.com/dsnikitin/sowhat/internal/consts/format"
+	"github.com/pkg/errors"
+)
 
 var (
-	ErrInternalServer     = errors.New("internal server error")
-	ErrAlreadyExists      = errors.New("already exists")
-	ErrAlreadyAccepted    = errors.New("already accepted")
-	ErrNotFound           = errors.New("not found")
-	ErrAllWorkersBusy     = errors.New("all workers are busy")
-	ErrToManyRequests     = errors.New("too many requests")
-	ErrAccessTokenExpired = errors.New("access token expired")
-	ErrIncorrectMeetingID = errors.New("incorrect meeting id")
+	ErrInternalServer              = errors.New("internal server error")
+	ErrAlreadyExists               = errors.New("already exists")
+	ErrNotFound                    = errors.New("not found")
+	ErrAllWorkersBusy              = errors.New("all workers are busy")
+	ErrToManyRequests              = errors.New("too many requests")
+	ErrAccessTokenExpired          = errors.New("access token expired")
+	ErrRecognitionTaskNotCompleted = errors.New("recognition task is not completed")
+	ErrRecognitionTaskFailed       = errors.New("recognition is failed")
+	ErrTooEarly                    = errors.New("too early")
 )
+
+type ErrUnsupportedAudioFormat struct {
+	SupportedFormats []format.Type
+	Err              error
+}
+
+func NewUnsupportedAudioFormatError(supportedFormats []format.Type, err error) error {
+	return &ErrUnsupportedAudioFormat{
+		SupportedFormats: supportedFormats,
+		Err:              err,
+	}
+}
+
+func (e *ErrUnsupportedAudioFormat) Error() string {
+	return e.Err.Error()
+}
+
+func (e *ErrUnsupportedAudioFormat) Unwrap() error {
+	return e.Err
+}
+
+type ErrUnsupportedFileSize struct {
+	MinSize int64
+	MaxSize int64
+	Err     error
+}
+
+func NewUnsupportedFileSizeError(minSize, maxSize int64, err error) error {
+	return &ErrUnsupportedFileSize{
+		MinSize: minSize,
+		MaxSize: maxSize,
+		Err:     err,
+	}
+}
+
+func (e *ErrUnsupportedFileSize) Error() string {
+	return e.Err.Error()
+}
+
+func (e *ErrUnsupportedFileSize) Unwrap() error {
+	return e.Err
+}

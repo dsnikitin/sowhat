@@ -10,6 +10,8 @@ type Config struct {
 	OAuth            *oauth.Config `envPrefix:"OAUTH_" yaml:"oauth"`
 	RestAPI          *apiConfig    `envPrefix:"REST_API_" yaml:"rest_api"`
 	SupportedFormats string        `env:"SUPPORTED_FORMATS" yaml:"supported_formats"`
+	MinFileSize      int64         `env:"MIN_FILE_SIZE" yaml:"min_file_size"`
+	MaxFileSize      int64         `env:"MAX_FILE_SIZE" yaml:"max_file_size"`
 }
 
 func (c Config) Validate() error {

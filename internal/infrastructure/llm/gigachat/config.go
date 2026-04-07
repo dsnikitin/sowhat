@@ -23,15 +23,13 @@ func (c Config) Validate() error {
 }
 
 type apiConfig struct {
-	Chat          string `env:"CHAT" yaml:"chat"`
-	GetEmbeddings string `env:"GET_EMBEDDINGS" yaml:"get_embeddings"`
-	UploadFile    string `env:"UPLOAD_FILE" yaml:"upload_file"`
+	Completions string `env:"COMPLETIONS" yaml:"completions"`
+	UploadFile  string `env:"UPLOAD_FILE" yaml:"upload_file"`
 }
 
 func (c apiConfig) Validate() error {
 	return validation.ValidateStruct(&c,
-		validation.Field(&c.Chat, validation.Required, is.URL),
-		validation.Field(&c.GetEmbeddings, validation.Required, is.URL),
+		validation.Field(&c.Completions, validation.Required, is.URL),
 		validation.Field(&c.UploadFile, validation.Required, is.URL),
 	)
 }

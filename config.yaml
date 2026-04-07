@@ -2,8 +2,8 @@ telegram_bot:
   request_timeout: 30s
   poller_timeout: 10s
   ui:
-    summary_max_length: 150
-    transcript_max_length: 1500
+    summary_max_length: 1000
+    transcript_max_length: 4000
     meetings_per_page: 10
     date_format: 02.01.2006 15:04
 salute_speech:
@@ -12,11 +12,13 @@ salute_speech:
     scope: SALUTE_SPEECH_PERS
     refresh_threshold: 2m
     consumer: SaluteSpeech
-    supported_formats: PCM_S16LE, OPUS, MP3, FLAC, ALAW, MULAW
+  supported_formats: PCM_S16LE, OPUS, MP3, FLAC, ALAW, MULAW
+  min_file_size: 400
+  max_file_size: 1000000000
   rest_api:
     upload_data: https://smartspeech.sber.ru/rest/v1/data:upload
-    async_recognize: https://smartspeech.sber.rurest/v1/speech:async_recognize
-    get_task_status: https://smartspeech.sber.rurest/v1/task:get
+    async_recognize: https://smartspeech.sber.ru/rest/v1/speech:async_recognize
+    get_task_status: https://smartspeech.sber.ru/rest/v1/task:get
     download_data: https://smartspeech.sber.ru/rest/v1/data:download
 gigachat:
   oauth:
@@ -25,11 +27,15 @@ gigachat:
     refresh_threshold: 2m
     consumer: GigaChat
   rest_api:
-    chat: https://gigachat.devices.sberbank.ru/api/v1/chat/completions
-    get_embeddings: https://gigachat.devices.sberbank.ru/api/v1/embeddings
+    completions: https://gigachat.devices.sberbank.ru/api/v1/chat/completions
     upload_file: https://gigachat.devices.sberbank.ru/api/v1/files
 postgres_db:
   migrations_path: ./migrations
 log:
   log_level: info
   is_develop: true
+transcription_service:
+  workers_count: 10
+  queue_limit: 100
+  max_stage_attempts_count: 5
+  attempts_interval: 5s
