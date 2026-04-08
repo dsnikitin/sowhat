@@ -138,6 +138,10 @@ func (b *Bot) OnFind(botCtx telebot.Context) error {
 		}
 	}
 
+	if len(meetings) == 0 && offset == 0 {
+		return botCtx.Send(message.MeetingsNotFound, telebot.ModeMarkdown)
+	}
+
 	return b.sendMeetingsList(botCtx, meetings, total, offset)
 }
 
@@ -169,8 +173,6 @@ func (b *Bot) registerMeeting(botCtx telebot.Context, teleFile *telebot.File, mi
 		MIME:   mime,
 		Size:   teleFile.FileSize,
 	}
-
-	fmt.Println("SUB ID = ", b.subscriberID)
 
 	meetingId, err := b.service.RegisterMeeting(ctx, userID, file, b.subscriberID)
 	if err != nil {

@@ -52,7 +52,7 @@ func (g *GigaChat) Chat(
 	msgs = append(msgs, Message{Role: "system", Content: chatAboutMeetingsSystemPrompt})
 	for _, m := range history {
 		msgs = append(msgs,
-			Message{Role: "user", Content: query},
+			Message{Role: "user", Content: m.Query},
 			Message{Role: "assistant", Content: m.Answer},
 		)
 	}

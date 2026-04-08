@@ -6,6 +6,6 @@ type ChatMessage struct {
 	Answer string
 }
 
-func (m ChatMessage) ScanFields() []any {
+func (m *ChatMessage) ScanFields() []any {
 	return []any{&m.ChatID, &m.Query, &m.Answer}
 }

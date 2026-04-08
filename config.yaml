@@ -2,9 +2,9 @@ telegram_bot:
   request_timeout: 60s
   poller_timeout: 10s
   ui:
-    summary_max_length: 1000
+    summary_max_length: 800
     transcript_max_length: 4000
-    meetings_per_page: 10
+    meetings_per_page: 5
     date_format: 02.01.2006 15:04
 salute_speech:
   oauth:
