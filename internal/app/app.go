@@ -22,6 +22,7 @@ type App struct {
 	saluteSpeech *salute.SaluteSpeech
 	gigachat     *gigachat.GigaChat
 	teleBot      *telegram.Bot
+	service      *service.Service
 	ctxCancel    context.CancelFunc
 }
 
@@ -47,14 +48,12 @@ func New(cfg *config.Config) *App {
 	saluteSpeech := salute.New(appCtx, cfg.SaluteSpeech, httpClient, authorizer)
 	gigachat := gigachat.New(appCtx, cfg.GigaChat, httpClient, authorizer)
 	r := repository.New(pgDB)
-	s := service.New(appCtx, cfg.Transcription, r, saluteSpeech, gigachat, gigachat)
+	s := service.New(appCtx, cfg.Transcription, r, saluteSpeech, gigachat, gigachat, gigachat)
 
 	telebot, err := telegram.New(appCtx, cfg.TeleBot, s, s)
 	if err != nil {
 		logger.Log.Fatalw("Failed to init telegram bot", "error", err.Error())
 	}
-
-	s.Subscribe(telebot)
 
 	return &App{
 		pgDB:         pgDB,
@@ -62,11 +61,15 @@ func New(cfg *config.Config) *App {
 		saluteSpeech: saluteSpeech,
 		gigachat:     gigachat,
 		teleBot:      telebot,
+		service:      s,
 		ctxCancel:    appCtxCancel,
 	}
 }
 
 func (a *App) Run() {
+	a.service.PublisherService.Subscribe(a.teleBot)
+	a.service.TranscriptionService.RestartNotCompleted()
+
 	a.teleBot.Start()
 }
 

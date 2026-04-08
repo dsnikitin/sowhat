@@ -33,7 +33,8 @@ const updateTranscriptionSQL = `
 	UPDATE sowhat.transcriptions
 	SET transcriber_rq_file_id = @TranscriberRqFileID,
 		transcriber_task_id = @transcriberTaskID,
-		transcriber_rs_file_id = @TranscriberRsFileID
+		transcriber_rs_file_id = @TranscriberRsFileID,
+		is_completed = @isCompleted
 	WHERE meeting_id = @meetingID
 `
 
@@ -43,6 +44,7 @@ func (r *TranscriptionRepository) UpdateTranscription(ctx context.Context, tr mo
 		"TranscriberRqFileID": tr.TranscriberRqFileID,
 		"transcriberTaskID":   tr.TranscriberTaskID,
 		"TranscriberRsFileID": tr.TranscriberRsFileID,
+		"isCompleted":         tr.IsCompleted,
 	}
 
 	res, err := r.db.Exec(ctx, updateTranscriptionSQL, args)
@@ -58,11 +60,10 @@ func (r *TranscriptionRepository) UpdateTranscription(ctx context.Context, tr mo
 }
 
 const getNotCompletedTranscriptionsSQL = `
-	SELECT m.id, m.user_id, m.transcript, m.summary, m.chatter_file_id, m.is_transcription_failed, m.created_at,
-		t.transcriber_rq_file_id, t.transcriber_task_id, t.transcriber_rs_file_id, t.raw_transcript
+	SELECT m.id, m.user_id, m.transcript, m.summary, m.chatter_file_id, m.is_transcription_failed, m.created_at, m.raw_transcript,
+		t.transcriber_rq_file_id, t.transcriber_task_id, t.transcriber_rs_file_id, t.is_completed
 	FROM sowhat.transcriptions t
 	INNER JOIN sowhat.meetings m ON t.meeting_id = m.id
-	-- WHERE NOT m.is_transcription_failed AND m.summary IS NULL
 	WHERE NOT t.is_completed
 `
 

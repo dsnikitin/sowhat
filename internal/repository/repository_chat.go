@@ -44,8 +44,8 @@ func (r *ChatRepository) GetMessages(ctx context.Context, userID int64) ([]model
 	args := pgx.NamedArgs{"userID": userID}
 	fieldsPointer := func(m *models.ChatMessage) []any { return m.ScanFields() }
 
-	meetings, err := postgres.Query(ctx, r.db, getMessagesSQL, args, fieldsPointer)
-	return meetings, errors.Wrap(err, "query")
+	msgs, err := postgres.Query(ctx, r.db, getMessagesSQL, args, fieldsPointer)
+	return msgs, errors.Wrap(err, "query")
 }
 
 const deleteMessagesSQL = `

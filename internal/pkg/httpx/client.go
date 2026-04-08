@@ -50,7 +50,7 @@ func (c *Client) DoRequestWithContext(
 			return errors.Wrap(err, "read response body")
 		}
 
-		return errors.Wrapf(err, "error response code received: code %d, error %s", resp.StatusCode, string(body))
+		return errors.Errorf("error response code received: code %d, error %s", resp.StatusCode, string(body))
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {

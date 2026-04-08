@@ -4,9 +4,9 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
+	"strings"
 
 	"github.com/dsnikitin/sowhat/internal/consts/format"
 	"github.com/dsnikitin/sowhat/internal/pkg/errx"
@@ -33,7 +33,6 @@ type SaluteSpeech struct {
 	cfg        *Config
 	client     *httpx.Client
 	authorizer Authorizer
-	httpCl     *http.Client
 }
 
 func New(appCtx context.Context, cfg *Config, cleint *httpx.Client, a Authorizer) *SaluteSpeech {
@@ -42,7 +41,6 @@ func New(appCtx context.Context, cfg *Config, cleint *httpx.Client, a Authorizer
 		cfg:        cfg,
 		client:     cleint,
 		authorizer: a,
-		httpCl:     http.DefaultClient,
 	}
 }
 
@@ -140,51 +138,18 @@ func (s *SaluteSpeech) DownloadTranscript(fileID string) (string, []string, erro
 		return "", nil, errors.Wrap(err, "get access token")
 	}
 
-	// endpoint := s.cfg.RestAPI.DownloadData + "?response_file_id=" + fileID
-	// headers := map[string]string{
-	// 	"Accept":        "application/json",
-	// 	"Authorization": "Bearer " + accessToken,
-	// }
-
-	// var res DownloadResponse
-	// err = s.client.DoRequestWithContext(
-	// 	s.appCtx, http.MethodGet, endpoint, headers, http.NoBody, &res)
-	// if err != nil {
-	// 	return "", errors.Wrap(err, "do http request with context")
-	// }
-
 	endpoint := s.cfg.RestAPI.DownloadData + "?response_file_id=" + fileID
-	req, err := http.NewRequestWithContext(s.appCtx, http.MethodGet, endpoint, http.NoBody)
-	if err != nil {
-		return "", nil, errors.Wrap(err, "new http request")
+	headers := map[string]string{
+		"Accept":        "application/json",
+		"Authorization": "Bearer " + accessToken,
 	}
-
-	req.Header.Add("Accept", "application/json")
-	req.Header.Add("Authorization", "Bearer "+accessToken)
-
-	resp, err := s.httpCl.Do(req)
-	if err != nil {
-		return "", nil, errors.Wrap(err, "do http request")
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != 200 {
-		return "", nil, errors.Errorf("download error code %d", resp.StatusCode)
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return "", nil, errors.Wrap(err, "read response body")
-	}
-
-	fmt.Printf("BODY = %+v\n", string(body))
 
 	var res DownloadResponse
-	if err := json.Unmarshal(body, &res); err != nil {
-		return "", nil, errors.Wrap(err, "unmarshal response body")
+	err = s.client.DoRequestWithContext(
+		s.appCtx, http.MethodGet, endpoint, headers, http.NoBody, &res)
+	if err != nil {
+		return "", nil, errors.Wrap(err, "do http request with context")
 	}
-
-	fmt.Printf("RESPONSE = %+v\n", res)
 
 	phrases := make([]string, 0, len(res))
 	for i := range res {
@@ -193,5 +158,5 @@ func (s *SaluteSpeech) DownloadTranscript(fileID string) (string, []string, erro
 		}
 	}
 
-	return string(body), phrases, nil
+	return strings.Join(phrases, ". "), phrases, nil
 }

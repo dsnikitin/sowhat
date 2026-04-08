@@ -6,7 +6,6 @@ import (
 	"io"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/dsnikitin/sowhat/internal/consts/format"
@@ -36,16 +35,18 @@ type ChatUploader interface {
 	UploadFile(file io.Reader, contentType string) (string, error)
 }
 
+type Publisher interface {
+	SubscribeForEvent(meetingID int64, subsriberID uuid.UUID) error
+	UnsubscribeFromEvent(meetingID int64, subscriberID uuid.UUID)
+	DeleteSubscription(meetingID int64)
+	PublishEvent(msg models.TranscriptionCompletedMsg)
+}
+
 type TranscriptionRepository interface {
 	CreateTranscription(ctx context.Context, meetingID int64) error
 	UpdateTranscription(ctx context.Context, tr models.Transcription) error
 	UpdateMeeting(ctx context.Context, meeting models.Meeting) error
 	GetNotCompletedTranscriptions(ctx context.Context) ([]models.Transcription, error)
-}
-
-type Subscriber interface {
-	GetID() uuid.UUID
-	Notify(msg models.TranscriptionCompletedMsg) error
 }
 
 type TranscriptionService struct {
@@ -64,14 +65,14 @@ type TranscriptionService struct {
 	t              Transcriber
 	sum            Summarizer
 	ch             ChatUploader
+	p              Publisher
 	r              TranscriptionRepository
-	mu             sync.RWMutex
-	subscribers    map[uuid.UUID]Subscriber
-	subscribtions  map[int64]map[uuid.UUID]Subscriber
 }
 
 func NewTranscriptionService(
-	appCtx context.Context, cfg *TranscriptionConfig, tr Transcriber, sum Summarizer, r TranscriptionRepository,
+	appCtx context.Context, cfg *TranscriptionConfig,
+	tr Transcriber, sum Summarizer, ch ChatUploader, p Publisher,
+	r TranscriptionRepository,
 ) *TranscriptionService {
 	s := &TranscriptionService{
 		cfg:            cfg,
@@ -87,9 +88,9 @@ func NewTranscriptionService(
 		stopCh:         make(chan struct{}),
 		t:              tr,
 		sum:            sum,
+		ch:             ch,
+		p:              p,
 		r:              r,
-		subscribers:    make(map[uuid.UUID]Subscriber),
-		subscribtions:  make(map[int64]map[uuid.UUID]Subscriber),
 	}
 
 	go s.start()
@@ -142,6 +143,12 @@ func (s *TranscriptionService) RestartNotCompleted() {
 	}
 
 	for _, tr := range trs {
+		// TODO - нужно хранить подписки в БД, чтобы восстановить
+		// if err := s.p.SubscribeForEvent(tr.Meeting.ID, subscriberID); err != nil {
+		// 	logger.Log.Errorw("Failed to subscribe for event",
+		// 		"meeting_id", "subscriber_id", "error", err.Error())
+		// }
+
 		switch {
 		case tr.TranscriberRqFileID == nil:
 			tr.Meeting.IsTranscriptionFailed = true
@@ -183,62 +190,17 @@ func (s *TranscriptionService) AsyncTranscribe(userID int64, file models.File, s
 		FileMIME:    file.MIME,
 	}
 
-	if err := s.subscribeForMeeting(file.MeetingID, subscriberID); err != nil {
+	if err := s.p.SubscribeForEvent(file.MeetingID, subscriberID); err != nil {
 		return errors.Wrap(err, "subscribe for meeting")
 	}
 
 	if err := s.createTranscription(tr); err != nil {
-		s.unsubscribeFromMeeting(file.MeetingID, subscriberID)
+		s.p.UnsubscribeFromEvent(file.MeetingID, subscriberID)
 		return errors.Wrap(err, "create transcription")
 	}
 
 	logger.Log.Infow("Transcription task successfully started", "meeting_id", tr.Meeting.ID)
 	return nil
-}
-
-func (s *TranscriptionService) Subscribe(sub Subscriber) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.subscribers[sub.GetID()] = sub
-}
-
-func (s *TranscriptionService) subscribeForMeeting(meetingID int64, sbrID uuid.UUID) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	subcriber, ok := s.subscribers[sbrID]
-	if !ok {
-		return errors.Errorf("Unknown subscriber %d", sbrID)
-	}
-
-	if _, ok := s.subscribtions[meetingID]; !ok {
-		s.subscribtions[meetingID] = map[uuid.UUID]Subscriber{sbrID: subcriber}
-	} else {
-		if _, ok := s.subscribtions[meetingID][sbrID]; !ok {
-			s.subscribtions[meetingID][sbrID] = subcriber
-		}
-	}
-
-	return nil
-}
-
-func (s *TranscriptionService) unsubscribeFromMeeting(meetingID int64, subscriberID uuid.UUID) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if subscribers, ok := s.subscribtions[meetingID]; ok {
-		delete(subscribers, subscriberID)
-	}
-
-	if len(s.subscribtions[meetingID]) == 0 {
-		delete(s.subscribtions, meetingID)
-	}
-}
-
-func (s *TranscriptionService) deleteSubscription(meetingID int64) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	delete(s.subscribtions, meetingID)
 }
 
 func (s *TranscriptionService) upload() error {
@@ -444,6 +406,7 @@ func (s *TranscriptionService) finalize() error {
 						return errors.Wrap(err, "update meeting")
 					}
 
+					tr.IsCompleted = true
 					return nil
 				})
 				logStageResult("Finalize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
@@ -456,13 +419,12 @@ func (s *TranscriptionService) finalize() error {
 					IsTranscriptionFailed: tr.Meeting.IsTranscriptionFailed,
 				}
 
-				s.publishTranscriptionCompletedEvent(msg)
-				s.deleteSubscription(tr.Meeting.ID)
+				s.p.PublishEvent(msg)
+				s.p.DeleteSubscription(tr.Meeting.ID)
 
 				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
 				defer cancel()
 
-				tr.IsCompleted = true
 				err := s.r.UpdateTranscription(ctx, tr)
 				return errors.Wrap(err, "update transcription")
 			})
@@ -502,7 +464,7 @@ func (s *TranscriptionService) persistAndForward(
 	tr *models.Transcription, curStage, nextStage chan (models.Transcription), stageErr error, work func() error,
 ) error {
 	// фейл на этапе
-	if tr.Meeting.IsTranscriptionFailed {
+	if tr.Meeting.IsTranscriptionFailed && !tr.IsCompleted {
 		return errors.Wrap(s.put(s.finalizeStage, *tr), "put to finalize stage couse transcription is failed")
 	}
 
@@ -585,7 +547,7 @@ func logStageResult(stageName string, meetingID int64, IsFailed bool, err error)
 		logger.Log.Errorw(fmt.Sprintf("Failed to do %s stage", stageName),
 			"meeting_id", meetingID, "isFailed", IsFailed, "error", err.Error())
 	} else {
-		logger.Log.Infow(fmt.Sprintf("Upload stage successfully completed", stageName), "meeting_id", meetingID)
+		logger.Log.Infow(fmt.Sprintf("%s stage successfully completed", stageName), "meeting_id", meetingID)
 	}
 }
 
@@ -596,23 +558,5 @@ func logFrowardOrRetryResult(stageName string, meetingID int64, IsFailed bool, e
 	} else {
 		logger.Log.Infow(fmt.Sprintf("Persist and forward successfully completed after %s stage", stageName),
 			"meeting_id", meetingID)
-	}
-}
-
-func (s *TranscriptionService) publishTranscriptionCompletedEvent(msg models.TranscriptionCompletedMsg) {
-	if _, ok := s.subscribtions[msg.MeetingID]; !ok {
-		return
-	}
-
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if subscribers, ok := s.subscribtions[msg.MeetingID]; ok {
-		for _, subscriber := range subscribers {
-			if err := subscriber.Notify(msg); err != nil {
-				logger.Log.Warnw("Failed to notify transcription completed",
-					"subscriber_id", subscriber.GetID(), "meeting_id", msg.MeetingID, "is_transcription_failed", msg.IsTranscriptionFailed)
-			}
-		}
 	}
 }

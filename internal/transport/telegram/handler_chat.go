@@ -54,7 +54,7 @@ func (h *Bot) OnText(botCtx telebot.Context) error {
 		return botCtx.Send(message.OperationFailed, telebot.ModeMarkdown)
 	}
 
-	answer, err := h.service.ContinueChat(ctx, userID, botCtx.Data())
+	answer, err := h.service.ContinueChat(ctx, userID, botCtx.Message().Text)
 	if err != nil {
 		switch {
 		case errors.Is(err, errx.ErrNoFilesForQuestion):

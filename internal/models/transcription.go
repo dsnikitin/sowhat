@@ -17,9 +17,9 @@ type Transcription struct {
 	FileMIME            string
 }
 
-func (t Transcription) ScanFields() []any {
-	return []any{append(t.Meeting.ScanFields(),
-		&t.TranscriberRqFileID, &t.TranscriberTaskID, &t.TranscriberRsFileID, &t.IsCompleted)}
+func (t *Transcription) ScanFields() []any {
+	return append(t.Meeting.ScanFields(),
+		&t.TranscriberRqFileID, &t.TranscriberTaskID, &t.TranscriberRsFileID, &t.IsCompleted)
 }
 
 type File struct {

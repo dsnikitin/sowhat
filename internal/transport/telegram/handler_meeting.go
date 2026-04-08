@@ -170,6 +170,8 @@ func (b *Bot) registerMeeting(botCtx telebot.Context, teleFile *telebot.File, mi
 		Size:   teleFile.FileSize,
 	}
 
+	fmt.Println("SUB ID = ", b.subscriberID)
+
 	meetingId, err := b.service.RegisterMeeting(ctx, userID, file, b.subscriberID)
 	if err != nil {
 		var ufErr *errx.ErrUnsupportedAudioFormat

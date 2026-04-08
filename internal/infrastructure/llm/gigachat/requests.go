@@ -3,7 +3,7 @@ package gigachat
 type Message struct {
 	Role        string   `json:"role"`
 	Content     string   `json:"content"`
-	Attachments []string `json:"attachments"`
+	Attachments []string `json:"attachments,omitempty"`
 }
 
 type Request struct {

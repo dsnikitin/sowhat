@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dsnikitin/sowhat/internal/models"
 	"github.com/google/uuid"
@@ -34,7 +33,6 @@ func (s *MeetingService) RegisterMeeting(ctx context.Context, userID int64, file
 	if err != nil {
 		return 0, errors.Wrap(err, "create meeting")
 	}
-	fmt.Println("meetingID =", meetingID)
 
 	file.MeetingID = meetingID
 	if err = s.t.AsyncTranscribe(userID, file, subscriberID); err != nil {

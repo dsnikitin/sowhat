@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/dsnikitin/sowhat/internal/models"
-	"github.com/dsnikitin/sowhat/internal/pkg/errx"
 	"github.com/pkg/errors"
 )
 
@@ -29,14 +28,17 @@ func NewChatService(ch Chatter, r ChatRepository) *ChatService {
 }
 
 func (s *ChatService) NewChat(ctx context.Context, userID int64, query string) (string, error) {
-	fileIDs, err := s.r.GetFileIDs(ctx, userID)
-	if err != nil {
-		return "", errors.Wrap(err, "get file ids")
-	}
+	// TODO
+	// fileIDs, err := s.r.GetFileIDs(ctx, userID)
+	// if err != nil {
+	// 	return "", errors.Wrap(err, "get file ids")
+	// }
 
 	// if len(fileIDs) == 0 {
 	// 	return "", errx.ErrNoFilesForQuestion
 	// }
+
+	fileIDs := []string{}
 
 	msg, err := s.ch.Chat(ctx, query, fileIDs, nil)
 	if err != nil {
@@ -55,14 +57,16 @@ func (s *ChatService) NewChat(ctx context.Context, userID int64, query string) (
 }
 
 func (s *ChatService) ContinueChat(ctx context.Context, userID int64, query string) (string, error) {
-	fileIDs, err := s.r.GetFileIDs(ctx, userID)
-	if err != nil {
-		return "", errors.Wrap(err, "get file ids")
-	}
+	// TODO
+	// fileIDs, err := s.r.GetFileIDs(ctx, userID)
+	// if err != nil {
+	// 	return "", errors.Wrap(err, "get file ids")
+	// }
 
-	if len(fileIDs) == 0 {
-		return "", errx.ErrNoFilesForQuestion
-	}
+	// if len(fileIDs) == 0 {
+	// 	return "", errx.ErrNoFilesForQuestion
+	// }
+	fileIDs := []string{}
 
 	history, err := s.r.GetMessages(ctx, userID)
 	if err != nil {

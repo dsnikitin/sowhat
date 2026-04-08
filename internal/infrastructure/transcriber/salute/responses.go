@@ -23,6 +23,7 @@ type CheckTaskResponse struct {
 	} `json:"result"`
 }
 
+// TODO нужно расширить структуру, чтобы парсить все поля ответа для raw_transcript
 type DownloadResponse []struct {
 	Results []struct {
 		Text string `json:"text"`
