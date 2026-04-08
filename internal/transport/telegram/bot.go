@@ -3,10 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
-	"log"
-	"net/http"
 	"strconv"
-	"time"
 
 	"github.com/dsnikitin/sowhat/internal/consts/platform"
 	"github.com/dsnikitin/sowhat/internal/models"
@@ -17,7 +14,6 @@ import (
 	"github.com/dsnikitin/sowhat/internal/transport/telegram/middleware"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
-	"golang.org/x/net/proxy"
 	"golang.org/x/sync/errgroup"
 	"gopkg.in/telebot.v3"
 )
@@ -44,30 +40,9 @@ func New(
 ) (*Bot, error) {
 	logger.Log.Info("Connecting to Telegram API...")
 
-	socksProxy := "127.0.0.1:9050" // Стандартный порт Tor
-
-	dialer, err := proxy.SOCKS5("tcp", socksProxy, nil, proxy.Direct)
-	if err != nil {
-		log.Fatal("Ошибка создания прокси-диалера:", err)
-	}
-
-	// 2. Создаем HTTP-транспорт с прокси
-	httpTransport := &http.Transport{
-		Dial:                  dialer.Dial,
-		TLSHandshakeTimeout:   30 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Second,
-	}
-
-	// 3. Создаем HTTP-клиент с этим транспортом
-	httpClient := &http.Client{
-		Transport: httpTransport,
-		Timeout:   90 * time.Second,
-	}
-
 	tbot, err := telebot.NewBot(telebot.Settings{
 		Token:  cfg.AuthToken,
 		Poller: &telebot.LongPoller{Timeout: cfg.PollerTimeout},
-		Client: httpClient,
 	})
 	if err != nil {
 		return nil, err
