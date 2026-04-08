@@ -28,7 +28,6 @@ func NewChatService(ch Chatter, r ChatRepository) *ChatService {
 }
 
 func (s *ChatService) NewChat(ctx context.Context, userID int64, query string) (string, error) {
-	// TODO
 	// fileIDs, err := s.r.GetFileIDs(ctx, userID)
 	// if err != nil {
 	// 	return "", errors.Wrap(err, "get file ids")
@@ -57,7 +56,6 @@ func (s *ChatService) NewChat(ctx context.Context, userID int64, query string) (
 }
 
 func (s *ChatService) ContinueChat(ctx context.Context, userID int64, query string) (string, error) {
-	// TODO
 	// fileIDs, err := s.r.GetFileIDs(ctx, userID)
 	// if err != nil {
 	// 	return "", errors.Wrap(err, "get file ids")

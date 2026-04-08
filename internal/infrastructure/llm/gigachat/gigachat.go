@@ -124,6 +124,7 @@ func (g *GigaChat) UploadFile(fileContent io.Reader, contentType string) (string
 	}
 
 	return "some_id", nil // TODO
+	// return res.FileId, nil
 }
 
 func buildMultipartBody(fileContent io.Reader) (*bytes.Buffer, error) {

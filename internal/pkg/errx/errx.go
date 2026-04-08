@@ -14,6 +14,14 @@ var (
 	ErrRecognitionTaskFailed       = errors.New("recognition is failed")
 	ErrTooEarly                    = errors.New("too early")
 	ErrNoFilesForQuestion          = errors.New("no files for question")
+	ErrBadRequest                  = errors.New("bad request")
+	ErrUnauthorized                = errors.New("unauthorized")
+	ErrPaymentRequired             = errors.New("payment required")
+	ErrPermissionDenied            = errors.New("permission denied")
+	ErrTooLarge                    = errors.New("too large payload")
+	ErrUnprocessable               = errors.New("unprocessable entity")
+	ErrTooManyRequests             = errors.New("too many requests")
+	ErrInternalServer              = errors.New("internal server error")
 )
 
 type ErrUnsupportedAudioFormat struct {

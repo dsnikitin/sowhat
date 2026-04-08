@@ -139,6 +139,11 @@ const TooBusy = `
 Попробуй повторить операцию позднее.
 `
 
+const TooLargeChat = `
+😵 Похоже, ты меня заговорил. Давай начнем всё с начала.
+Использую команду /chat <вопрос> чтобы начать беседу.
+`
+
 func MeeetingWithTranscript(meeting models.Meeting, dateFormat string, transcriptLength int) string {
 	var transcript string
 	if meeting.IsTranscriptionFailed {

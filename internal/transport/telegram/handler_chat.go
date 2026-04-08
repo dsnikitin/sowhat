@@ -32,6 +32,8 @@ func (h *Bot) OnChat(botCtx telebot.Context) error {
 	answer, err := h.service.NewChat(ctx, userID, strings.Join(args, " "))
 	if err != nil {
 		switch {
+		case errors.Is(err, errx.ErrTooLarge):
+			return botCtx.Send(message.TooLargeChat, telebot.ModeMarkdown)
 		case errors.Is(err, errx.ErrNoFilesForQuestion):
 			return botCtx.Send(message.NoFilesForQuestion, telebot.ModeMarkdown)
 		case errors.Is(err, context.DeadlineExceeded):
@@ -57,6 +59,8 @@ func (h *Bot) OnText(botCtx telebot.Context) error {
 	answer, err := h.service.ContinueChat(ctx, userID, botCtx.Message().Text)
 	if err != nil {
 		switch {
+		case errors.Is(err, errx.ErrTooLarge):
+			return botCtx.Send(message.TooLargeChat, telebot.ModeMarkdown)
 		case errors.Is(err, errx.ErrNoFilesForQuestion):
 			return botCtx.Send(message.NoFilesForQuestion, telebot.ModeMarkdown)
 		case errors.Is(err, context.DeadlineExceeded):

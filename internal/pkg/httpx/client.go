@@ -6,6 +6,7 @@ import (
 	"io"
 	"net/http"
 
+	"github.com/dsnikitin/sowhat/internal/pkg/errx"
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
 	"github.com/pkg/errors"
 )
@@ -45,12 +46,33 @@ func (c *Client) DoRequestWithContext(
 	}(req.Body)
 
 	if resp.StatusCode != 200 {
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return errors.Wrap(err, "read response body")
+		switch resp.StatusCode {
+		case 400:
+			err = errx.ErrBadRequest
+		case 401:
+			err = errx.ErrUnauthorized
+		case 402:
+			err = errx.ErrPaymentRequired
+		case 403:
+			err = errx.ErrPermissionDenied
+		case 404:
+			err = errx.ErrNotFound
+		case 413:
+			err = errx.ErrTooLarge
+		case 422:
+			err = errx.ErrUnprocessable
+		case 429:
+			err = errx.ErrTooManyRequests
+		case 500:
+			err = errx.ErrInternalServer
 		}
 
-		return errors.Errorf("error response code received: code %d, error %s", resp.StatusCode, string(body))
+		body, readErr := io.ReadAll(resp.Body)
+		if readErr != nil {
+			return errors.Wrap(readErr, "read response body")
+		}
+
+		return errors.Wrapf(err, "error response code received: code %d, error %s", resp.StatusCode, string(body))
 	}
 
 	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {

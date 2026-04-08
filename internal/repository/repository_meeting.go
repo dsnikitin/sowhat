@@ -128,7 +128,7 @@ func (r *MeetingRepository) UpdateMeeting(ctx context.Context, meeting models.Me
 const getFileIDsSQL = `
 	SELECT chatter_file_id
 	FROM sowhat.meetings
-	WHERE user_id = @userID
+	WHERE user_id = @userID AND chatter_file_id IS NOT NULL
 `
 
 func (r *MeetingRepository) GetFileIDs(ctx context.Context, userID int64) ([]string, error) {

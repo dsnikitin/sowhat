@@ -18,6 +18,18 @@ import (
 	"golang.org/x/sync/errgroup"
 )
 
+type stage string
+
+const (
+	upload    stage = "Upload"
+	recognize stage = "Recognize"
+	poll      stage = "Poll"
+	download  stage = "Download"
+	summarize stage = "Summarize"
+	chat      stage = "Chat"
+	finalize  stage = "Finalize"
+)
+
 type Transcriber interface {
 	SupportedFormats() []format.Type
 	MinAndMaxFileSize() (int64, int64)
@@ -31,7 +43,7 @@ type Summarizer interface {
 	Summarize(text string) (string, error)
 }
 
-type ChatUploader interface {
+type ChatFilesUploader interface {
 	UploadFile(file io.Reader, contentType string) (string, error)
 }
 
@@ -49,6 +61,20 @@ type TranscriptionRepository interface {
 	GetNotCompletedTranscriptions(ctx context.Context) ([]models.Transcription, error)
 }
 
+type TranscriptionConfig struct {
+	WorkersCount          int           `env:"WORKERS_COUNT" yaml:"workers_count"`
+	QueueLimit            int           `env:"QUEUE_LIMIT" yaml:"queue_limit"`
+	MaxStageAttemptsCount int           `env:"MAX_STAGE_ATTEMPTS_COUNT" yaml:"max_stage_attempts_count"`
+	AttemptsInterval      time.Duration `env:"ATTEMPTS_INTERVAL" yaml:"attempts_interval"`
+}
+
+func (h TranscriptionConfig) Validate() error {
+	return validation.ValidateStruct(&h,
+		validation.Field(&h.WorkersCount, validation.Required, validation.Min(1)),
+		validation.Field(&h.QueueLimit, validation.Required, validation.Min(1)),
+	)
+}
+
 type TranscriptionService struct {
 	appCtx         context.Context
 	cfg            *TranscriptionConfig
@@ -64,14 +90,14 @@ type TranscriptionService struct {
 	eg             errgroup.Group
 	t              Transcriber
 	sum            Summarizer
-	ch             ChatUploader
+	ch             ChatFilesUploader
 	p              Publisher
 	r              TranscriptionRepository
 }
 
 func NewTranscriptionService(
 	appCtx context.Context, cfg *TranscriptionConfig,
-	tr Transcriber, sum Summarizer, ch ChatUploader, p Publisher,
+	tr Transcriber, sum Summarizer, ch ChatFilesUploader, p Publisher,
 	r TranscriptionRepository,
 ) *TranscriptionService {
 	s := &TranscriptionService{
@@ -100,30 +126,30 @@ func NewTranscriptionService(
 
 func (s *TranscriptionService) start() {
 	for range s.workers {
-		s.eg.Go(s.upload)
-		s.eg.Go(s.recognize)
-		s.eg.Go(s.poll)
-		s.eg.Go(s.download)
-		s.eg.Go(s.summarize)
-		s.eg.Go(s.chat)
-		s.eg.Go(s.finalize)
+		s.eg.Go(func() error {
+			return s.process(upload, s.uploadStage, s.recognizeStage, s.uploadFileToTranscriber, s.updateTranscription)
+		})
+		s.eg.Go(func() error {
+			return s.process(recognize, s.recognizeStage, s.pollStage, s.startRecognition, s.updateTranscription)
+		})
+		s.eg.Go(func() error {
+			return s.process(poll, s.pollStage, s.downloadStage, s.checkRecognitionIsReady, s.updateTranscription)
+		})
+		s.eg.Go(func() error {
+			return s.process(download, s.downloadStage, s.summarizeStage, s.downloadTranscript, s.updateMeeting)
+		})
+		s.eg.Go(func() error { // TODO исправить следущую стадию
+			return s.process(summarize, s.summarizeStage, s.finalizeStage, s.summarize, s.updateMeeting)
+		})
+		s.eg.Go(func() error {
+			return s.process(chat, s.chatStage, s.finalizeStage, s.uploadFileToChatter, s.updateMeeting)
+		})
+		s.eg.Go(func() error {
+			return s.process(finalize, s.finalizeStage, nil, s.finalize, s.notifyAndComlete)
+		})
 	}
 
 	s.eg.Wait()
-}
-
-type TranscriptionConfig struct {
-	WorkersCount          int           `env:"WORKERS_COUNT" yaml:"workers_count"`
-	QueueLimit            int           `env:"QUEUE_LIMIT" yaml:"queue_limit"`
-	MaxStageAttemptsCount int           `env:"MAX_STAGE_ATTEMPTS_COUNT" yaml:"max_stage_attempts_count"`
-	AttemptsInterval      time.Duration `env:"ATTEMPTS_INTERVAL" yaml:"attempts_interval"`
-}
-
-func (h TranscriptionConfig) Validate() error {
-	return validation.ValidateStruct(&h,
-		validation.Field(&h.WorkersCount, validation.Required, validation.Min(1)),
-		validation.Field(&h.QueueLimit, validation.Required, validation.Min(1)),
-	)
 }
 
 func (s *TranscriptionService) RestartNotCompleted() {
@@ -150,6 +176,8 @@ func (s *TranscriptionService) RestartNotCompleted() {
 		// }
 
 		switch {
+		case tr.Meeting.IsTranscriptionFailed:
+			err = s.put(s.finalizeStage, tr)
 		case tr.TranscriberRqFileID == nil:
 			tr.Meeting.IsTranscriptionFailed = true
 			err = s.put(s.finalizeStage, tr)
@@ -161,6 +189,8 @@ func (s *TranscriptionService) RestartNotCompleted() {
 			err = s.put(s.downloadStage, tr)
 		case tr.Meeting.Summary == nil:
 			err = s.put(s.summarizeStage, tr)
+		case tr.Meeting.ChatterFileId == nil:
+			err = s.put(s.chatStage, tr)
 		default:
 			err = s.put(s.finalizeStage, tr)
 		}
@@ -203,234 +233,136 @@ func (s *TranscriptionService) AsyncTranscribe(userID int64, file models.File, s
 	return nil
 }
 
-func (s *TranscriptionService) upload() error {
+func (s *TranscriptionService) process(
+	name stage,
+	curStage, nextStage chan models.Transcription,
+	stageFn func(*models.Transcription) error,
+	afterStageFn func(models.Transcription) error,
+) error {
 	for {
 		select {
 		case <-s.stopCh:
 			return nil
-		case tr := <-s.uploadStage:
+		case tr := <-curStage:
 			var stageErr error
-			if tr.TranscriberRqFileID == nil {
-				stageErr = s.doStage(&tr, func() error {
-					fileID, err := s.t.UploadFile(tr.FileContent, tr.FileMIME)
-					tr.TranscriberRqFileID = &fileID
-					return errors.Wrap(err, "upload file")
-				})
-				logStageResult("Upload", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
-			}
-
-			err := s.persistAndForward(&tr, s.uploadStage, s.recognizeStage, stageErr, func() error {
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-				defer cancel()
-
-				err := s.r.UpdateTranscription(ctx, tr)
-				return errors.Wrap(err, "update transcription")
-			})
-			logFrowardOrRetryResult("Upload", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
-		}
-	}
-}
-
-func (s *TranscriptionService) recognize() error {
-	for {
-		select {
-		case <-s.stopCh:
-			return nil
-		case tr := <-s.recognizeStage:
-			var stageErr error
-			if tr.TranscriberTaskID == nil {
-				stageErr = s.doStage(&tr, func() error {
-					taskID, err := s.t.AsyncRecognize(*tr.TranscriberRqFileID, tr.FileMIME)
-					tr.TranscriberTaskID = &taskID
-					return errors.Wrap(err, "async recognize")
-				})
-				logStageResult("Recognize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
-			}
-
-			err := s.persistAndForward(&tr, s.recognizeStage, s.pollStage, stageErr, func() error {
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-				defer cancel()
-
-				err := s.r.UpdateTranscription(ctx, tr)
-				return errors.Wrap(err, "update transcription")
-			})
-			logFrowardOrRetryResult("Recognize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
-		}
-	}
-}
-
-func (s *TranscriptionService) poll() error {
-	for {
-		select {
-		case <-s.stopCh:
-			return nil
-		case tr := <-s.pollStage:
-			var stageErr error
+			var stageField *string
 			if tr.LastAttemptAt.Add(s.cfg.AttemptsInterval).After(time.Now()) {
 				stageErr = errx.ErrTooEarly
 			} else {
-				stageErr = s.doStage(&tr, func() error {
-					fileID, err := s.t.CheckTaskCompleted(*tr.TranscriberTaskID)
-					tr.TranscriberRsFileID = &fileID
-					return errors.Wrap(err, "check recognition task completed")
-				})
-				switch {
-				case stageErr == nil:
-					logger.Log.Infow("Poll stage successfully completed",
-						"is_succeeded", !tr.Meeting.IsTranscriptionFailed, "meeting_id", tr.Meeting.ID)
-				case errors.Is(stageErr, errx.ErrRecognitionTaskNotCompleted):
-					tr.StageAttemptsCount = 0
-					logger.Log.Infow("Recognition task is processing", "meeting_id", tr.Meeting.ID)
-				case errors.Is(stageErr, errx.ErrRecognitionTaskFailed):
-					logger.Log.Infow("Recognition task failed", "meeting_id", tr.Meeting.ID)
-				default:
-					logger.Log.Errorw("Failed to do poll stage",
-						"meeting_id", tr.Meeting.ID, "isFailed", tr.Meeting.IsTranscriptionFailed, "error", stageErr.Error())
+				switch name {
+				case upload:
+					stageField = tr.TranscriberRqFileID
+				case recognize:
+					stageField = tr.TranscriberTaskID
+				case poll:
+					stageField = tr.TranscriberRsFileID
+				case download:
+					stageField = tr.Meeting.Transcript
+				case summarize:
+					stageField = tr.Meeting.Summary
+					// case chat:
+					// 	stageField = tr.Meeting.ChatterFileId
+				}
+				if stageField == nil || (name == finalize && tr.Meeting.IsTranscriptionFailed) {
+					stageErr = s.doStage(&tr, func() error {
+						return stageFn(&tr)
+					})
+					logStageResult(string(name), tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
 				}
 			}
 
-			err := s.persistAndForward(&tr, s.pollStage, s.downloadStage, stageErr, func() error {
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-				defer cancel()
-
-				err := s.r.UpdateTranscription(ctx, tr)
-				return errors.Wrap(err, "update transcription")
+			err := s.persistAndForward(&tr, curStage, nextStage, stageErr, func() error {
+				return afterStageFn(tr)
 			})
-			if errors.Is(stageErr, errx.ErrTooEarly) {
-				continue
+			if !errors.Is(stageErr, errx.ErrTooEarly) || err != nil {
+				logFrowardOrRetryResult(string(name), tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
 			}
-			logFrowardOrRetryResult("Poll", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
 		}
 	}
 }
 
-func (s *TranscriptionService) download() error {
-	for {
-		select {
-		case <-s.stopCh:
-			return nil
-		case tr := <-s.downloadStage:
-			var stageErr error
-			if tr.Meeting.Transcript == nil {
-				stageErr = s.doStage(&tr, func() error {
-					rawTranscript, phrases, err := s.t.DownloadTranscript(*tr.TranscriberRsFileID)
-					tr.Meeting.RawTranscript = &rawTranscript
-					transcript := strings.Join(phrases, ".\n")
-					tr.Meeting.Transcript = &transcript
-					return errors.Wrap(err, "download transcript")
-				})
-				logStageResult("Download", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
-			}
-
-			err := s.persistAndForward(&tr, s.downloadStage, s.summarizeStage, stageErr, func() error {
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-				defer cancel()
-
-				err := s.r.UpdateMeeting(ctx, tr.Meeting)
-				return errors.Wrap(err, "update meeting")
-			})
-			logFrowardOrRetryResult("Download", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
-		}
-	}
+func (s *TranscriptionService) uploadFileToTranscriber(tr *models.Transcription) error {
+	fileID, err := s.t.UploadFile(tr.FileContent, tr.FileMIME)
+	tr.TranscriberRqFileID = &fileID
+	return errors.Wrap(err, "upload file")
 }
 
-func (s *TranscriptionService) summarize() error {
-	for {
-		select {
-		case <-s.stopCh:
-			return nil
-		case tr := <-s.summarizeStage:
-			var stageErr error
-			if tr.Meeting.Summary == nil {
-				stageErr = s.doStage(&tr, func() error {
-					summary, err := s.sum.Summarize(*tr.Meeting.RawTranscript)
-					tr.Meeting.Summary = &summary
-					return errors.Wrap(err, "summarize transcript")
-				})
-				logStageResult("Summarize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
-			}
-
-			err := s.persistAndForward(&tr, s.summarizeStage, s.chatStage, stageErr, func() error {
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-				defer cancel()
-
-				err := s.r.UpdateMeeting(ctx, tr.Meeting)
-				return errors.Wrap(err, "update meeting")
-			})
-			logFrowardOrRetryResult("Summarize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
-		}
-	}
+func (s *TranscriptionService) startRecognition(tr *models.Transcription) error {
+	taskID, err := s.t.AsyncRecognize(*tr.TranscriberRqFileID, tr.FileMIME)
+	tr.TranscriberTaskID = &taskID
+	return errors.Wrap(err, "async recognize")
 }
 
-func (s *TranscriptionService) chat() error {
-	for {
-		select {
-		case <-s.stopCh:
-			return nil
-		case tr := <-s.chatStage:
-			var stageErr error
-			if tr.Meeting.ChatterFileId == nil {
-				stageErr = s.doStage(&tr, func() error {
-					fileID, err := s.ch.UploadFile(strings.NewReader(*tr.Meeting.Transcript), "text/plain")
-					tr.Meeting.ChatterFileId = &fileID
-					return errors.Wrap(err, "upload file to chatter")
-				})
-				logStageResult("Chat", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
-			}
-
-			err := s.persistAndForward(&tr, s.chatStage, s.finalizeStage, stageErr, func() error {
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-				defer cancel()
-
-				err := s.r.UpdateMeeting(ctx, tr.Meeting)
-				return errors.Wrap(err, "update meeting")
-			})
-			logFrowardOrRetryResult("Chat", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
-		}
-	}
+func (s *TranscriptionService) checkRecognitionIsReady(tr *models.Transcription) error {
+	fileID, err := s.t.CheckTaskCompleted(*tr.TranscriberTaskID)
+	tr.TranscriberRsFileID = &fileID
+	return errors.Wrap(err, "check recognition task completed")
 }
 
-func (s *TranscriptionService) finalize() error {
-	for {
-		select {
-		case <-s.stopCh:
-			return nil
-		case tr := <-s.finalizeStage:
-			var stageErr error
-			if tr.Meeting.IsTranscriptionFailed {
-				stageErr = s.doStage(&tr, func() error {
-					ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-					defer cancel()
+func (s *TranscriptionService) downloadTranscript(tr *models.Transcription) error {
+	rawTranscript, phrases, err := s.t.DownloadTranscript(*tr.TranscriberRsFileID)
+	tr.Meeting.RawTranscript = &rawTranscript
+	transcript := strings.Join(phrases, ".\n")
+	tr.Meeting.Transcript = &transcript
+	return errors.Wrap(err, "download transcript")
+}
 
-					if err := s.r.UpdateMeeting(ctx, tr.Meeting); err != nil {
-						return errors.Wrap(err, "update meeting")
-					}
+func (s *TranscriptionService) summarize(tr *models.Transcription) error {
+	summary, err := s.sum.Summarize(*tr.Meeting.RawTranscript)
+	tr.Meeting.Summary = &summary
+	return errors.Wrap(err, "summarize transcript")
+}
 
-					tr.IsCompleted = true
-					return nil
-				})
-				logStageResult("Finalize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, stageErr)
-			}
+func (s *TranscriptionService) uploadFileToChatter(tr *models.Transcription) error {
+	fileID, err := s.ch.UploadFile(strings.NewReader(*tr.Meeting.Transcript), "text/plain")
+	tr.Meeting.ChatterFileId = &fileID
+	return errors.Wrap(err, "upload file to chatter")
+}
 
-			err := s.persistAndForward(&tr, s.finalizeStage, nil, stageErr, func() error {
-				msg := models.TranscriptionCompletedMsg{
-					MeetingID:             tr.Meeting.ID,
-					UserID:                tr.Meeting.UserID,
-					IsTranscriptionFailed: tr.Meeting.IsTranscriptionFailed,
-				}
+func (s *TranscriptionService) finalize(tr *models.Transcription) error {
+	ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
+	defer cancel()
 
-				s.p.PublishEvent(msg)
-				s.p.DeleteSubscription(tr.Meeting.ID)
-
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
-				defer cancel()
-
-				err := s.r.UpdateTranscription(ctx, tr)
-				return errors.Wrap(err, "update transcription")
-			})
-			logFrowardOrRetryResult("Finalize", tr.Meeting.ID, tr.Meeting.IsTranscriptionFailed, err)
-		}
+	if err := s.r.UpdateMeeting(ctx, tr.Meeting); err != nil {
+		return errors.Wrap(err, "update meeting")
 	}
+
+	tr.IsCompleted = true
+	return nil
+}
+
+func (s *TranscriptionService) notifyAndComlete(tr models.Transcription) error {
+	msg := models.TranscriptionCompletedMsg{
+		MeetingID:             tr.Meeting.ID,
+		UserID:                tr.Meeting.UserID,
+		IsTranscriptionFailed: tr.Meeting.IsTranscriptionFailed,
+	}
+
+	s.p.PublishEvent(msg)
+	s.p.DeleteSubscription(tr.Meeting.ID)
+
+	ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
+	defer cancel()
+
+	tr.IsCompleted = true
+	err := s.r.UpdateTranscription(ctx, tr)
+	return errors.Wrap(err, "update transcription")
+}
+
+func (s *TranscriptionService) updateTranscription(tr models.Transcription) error {
+	ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
+	defer cancel()
+
+	err := s.r.UpdateTranscription(ctx, tr)
+	return errors.Wrap(err, "update transcription")
+}
+
+func (s *TranscriptionService) updateMeeting(tr models.Transcription) error {
+	ctx, cancel := context.WithTimeout(s.appCtx, time.Second*10)
+	defer cancel()
+
+	err := s.r.UpdateMeeting(ctx, tr.Meeting)
+	return errors.Wrap(err, "update meeting")
 }
 
 func (s *TranscriptionService) doStage(tr *models.Transcription, stageFn func() error) error {
@@ -438,7 +370,7 @@ func (s *TranscriptionService) doStage(tr *models.Transcription, stageFn func() 
 		return errors.Wrap(stageFn(), "stage func")
 	})
 	if doErr != nil {
-		tr.Meeting.IsTranscriptionFailed = s.canRetry(tr, doErr)
+		tr.Meeting.IsTranscriptionFailed = !s.canRetry(tr, doErr)
 		return errors.Wrap(doErr, "do work")
 	}
 
@@ -539,7 +471,9 @@ func (s *TranscriptionService) canRetry(tr *models.Transcription, err error) boo
 		(tr.StageAttemptsCount < s.cfg.MaxStageAttemptsCount) &&
 		!errors.As(err, &usErr) &&
 		!errors.As(err, &ufErr) &&
-		!errors.Is(err, errx.ErrRecognitionTaskFailed)
+		!errors.Is(err, errx.ErrRecognitionTaskFailed) &&
+		!errors.Is(err, errx.ErrTooLarge) &&
+		!errors.Is(err, errx.ErrInternalServer)
 }
 
 func logStageResult(stageName string, meetingID int64, IsFailed bool, err error) {
