@@ -2,9 +2,12 @@ package message
 
 import (
 	"fmt"
+	"iter"
 	"strings"
 
 	"github.com/dsnikitin/sowhat/internal/models"
+	"github.com/dsnikitin/sowhat/internal/pkg/errx"
+	"github.com/pkg/errors"
 )
 
 const Introduction = `
@@ -162,13 +165,20 @@ func MeeetingWithTranscript(meeting models.Meeting, dateFormat string, transcrip
 	)
 }
 
-func MeetingsWithSummaryList(
-	meetings []models.Meeting, total int, dateFormat string, summaryLength int,
-) string {
+func MeetingsWithSummaryList(iter iter.Seq2[models.MeetingWithTotal, error], dateFormat string, summaryLength int) (string, error) {
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("📋 Встречи (всего %d):\n\n", total))
-	for i, m := range meetings {
-		sb.WriteString(fmt.Sprintf("%d. ID: %d\n", i+1, m.ID))
+	sb.WriteString("📋 Встречи:\n\n")
+	counter := 0
+	total := 0
+	for m, err := range iter {
+		if err != nil {
+			return "", errors.Wrap(err, "iterate meetings")
+		}
+
+		counter++
+		total = m.Total
+
+		sb.WriteString(fmt.Sprintf("%d. ID: %d\n", counter, m.ID))
 		sb.WriteString(fmt.Sprintf("📅 Дата: %s\n", m.CreatedAt.Format(dateFormat)))
 		if m.IsTranscriptionFailed {
 			sb.WriteString("⚠️ Возникли технические неполадки. Резюме не будет создано.\n\n")
@@ -179,12 +189,17 @@ func MeetingsWithSummaryList(
 		}
 	}
 
-	sb.WriteString("💡 Используй `/get <id встречи>` чтобы увидеть транскрипцию.\n")
-	if total > len(meetings) {
-		sb.WriteString("Используй `/list <№ страницы>` чтобы увидеть другие встречи.")
+	if total == 0 {
+		return "", errx.ErrEmptyList
 	}
 
-	return sb.String()
+	sb.WriteString("💡 Используй `/get <id встречи>` чтобы увидеть транскрипцию.\n\n")
+	if total > counter {
+		sb.WriteString(fmt.Sprintf(
+			"📚 Всего встреч %d\nИспользуй `/list номер` для перехода между страницами.", total))
+	}
+
+	return sb.String(), nil
 }
 
 func truncate(s string, maxRunes int) string {

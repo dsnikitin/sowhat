@@ -2,19 +2,20 @@ package service
 
 import (
 	"context"
+	"iter"
 
 	"github.com/dsnikitin/sowhat/internal/models"
 	"github.com/pkg/errors"
 )
 
 type Chatter interface {
-	Chat(ctx context.Context, query string, fileIDs []string, history []models.ChatMessage) (models.ChatMessage, error)
+	Chat(ctx context.Context, query string, fileIDs []string, history iter.Seq2[models.ChatMessage, error]) (models.ChatMessage, error)
 }
 
 type ChatRepository interface {
-	GetFileIDs(ctx context.Context, userID int64) ([]string, error)
+	GetFileIDs(ctx context.Context, userID int64) iter.Seq2[string, error]
 	SaveMessage(ctx context.Context, userID int64, msg models.ChatMessage) error
-	GetMessages(ctx context.Context, userID int64) ([]models.ChatMessage, error)
+	GetMessages(ctx context.Context, userID int64) iter.Seq2[models.ChatMessage, error]
 	DeleteMessages(ctx context.Context, userID int64) error
 }
 
@@ -39,7 +40,7 @@ func (s *ChatService) NewChat(ctx context.Context, userID int64, query string) (
 
 	fileIDs := []string{}
 
-	msg, err := s.ch.Chat(ctx, query, fileIDs, nil)
+	msg, err := s.ch.Chat(ctx, query, fileIDs, func(func(models.ChatMessage, error) bool) {})
 	if err != nil {
 		return "", errors.Wrap(err, "new chat with chatter")
 	}
@@ -65,13 +66,9 @@ func (s *ChatService) ContinueChat(ctx context.Context, userID int64, query stri
 	// 	return "", errx.ErrNoFilesForQuestion
 	// }
 	fileIDs := []string{}
+	iter := s.r.GetMessages(ctx, userID)
 
-	history, err := s.r.GetMessages(ctx, userID)
-	if err != nil {
-		return "", errors.Wrap(err, "get history")
-	}
-
-	msg, err := s.ch.Chat(ctx, query, fileIDs, history)
+	msg, err := s.ch.Chat(ctx, query, fileIDs, iter)
 	if err != nil {
 		return "", errors.Wrap(err, "continue chat with chatter")
 	}

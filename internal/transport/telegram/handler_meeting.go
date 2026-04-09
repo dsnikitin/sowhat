@@ -3,6 +3,7 @@ package telegram
 import (
 	"context"
 	"fmt"
+	"iter"
 	"strconv"
 	"strings"
 
@@ -18,8 +19,8 @@ import (
 type MeetingService interface {
 	RegisterMeeting(ctx context.Context, userID int64, file models.File, subscriberID uuid.UUID) (int64, error)
 	GetMeeting(ctx context.Context, userID, meetingID int64) (models.Meeting, error)
-	ListMeetings(ctx context.Context, userID int64, limit, offset int) ([]models.Meeting, int, error)
-	FindMeetings(ctx context.Context, userID int64, query string, limit, offset int) ([]models.Meeting, int, error)
+	ListMeetings(ctx context.Context, userID int64, limit, offset int) iter.Seq2[models.MeetingWithTotal, error]
+	FindMeetings(ctx context.Context, userID int64, query string, limit, offset int) iter.Seq2[models.MeetingWithTotal, error]
 }
 
 func (b *Bot) OnGet(botCtx telebot.Context) error {
@@ -82,9 +83,13 @@ func (b *Bot) OnList(botCtx telebot.Context) error {
 		offset = (page - 1) * b.cfg.UI.MeetingsPerPage
 	}
 
-	meetings, total, err := b.service.ListMeetings(ctx, userID, b.cfg.UI.MeetingsPerPage, offset)
+	iter := b.service.ListMeetings(ctx, userID, b.cfg.UI.MeetingsPerPage, offset)
+
+	msg, err := message.MeetingsWithSummaryList(iter, b.cfg.UI.DateFormat, b.cfg.UI.SummaryMaxLength)
 	if err != nil {
 		switch {
+		case errors.Is(err, errx.ErrEmptyList):
+			return b.sendNoMeetings(botCtx, offset, message.NoMeetings)
 		case errors.Is(err, context.DeadlineExceeded):
 			logger.Log.Warnw("Failed to list meetings", "error", err.Error(), "user_id", userID)
 			return botCtx.Send(message.TooBusy, telebot.ModeMarkdown)
@@ -94,7 +99,7 @@ func (b *Bot) OnList(botCtx telebot.Context) error {
 		}
 	}
 
-	return b.sendMeetingsList(botCtx, meetings, total, offset)
+	return botCtx.Send(msg, telebot.ModeMarkdown)
 }
 
 func (b *Bot) OnFind(botCtx telebot.Context) error {
@@ -125,10 +130,13 @@ func (b *Bot) OnFind(botCtx telebot.Context) error {
 	}
 
 	query := strings.Join(args[:argsCount], " ")
+	iter := b.service.FindMeetings(ctx, userID, query, b.cfg.UI.MeetingsPerPage, offset)
 
-	meetings, total, err := b.service.FindMeetings(ctx, userID, query, b.cfg.UI.MeetingsPerPage, offset)
+	msg, err := message.MeetingsWithSummaryList(iter, b.cfg.UI.DateFormat, b.cfg.UI.SummaryMaxLength)
 	if err != nil {
 		switch {
+		case errors.Is(err, errx.ErrEmptyList):
+			return b.sendNoMeetings(botCtx, offset, message.MeetingsNotFound)
 		case errors.Is(err, context.DeadlineExceeded):
 			logger.Log.Warnw("Failed to find meetings", "error", err.Error(), "user_id", userID)
 			return botCtx.Send(message.TooBusy, telebot.ModeMarkdown)
@@ -138,11 +146,7 @@ func (b *Bot) OnFind(botCtx telebot.Context) error {
 		}
 	}
 
-	if len(meetings) == 0 && offset == 0 {
-		return botCtx.Send(message.MeetingsNotFound, telebot.ModeMarkdown)
-	}
-
-	return b.sendMeetingsList(botCtx, meetings, total, offset)
+	return botCtx.Send(msg, telebot.ModeMarkdown)
 }
 
 func (b *Bot) OnVoice(botCtx telebot.Context) error {
@@ -199,16 +203,9 @@ func (b *Bot) registerMeeting(botCtx telebot.Context, teleFile *telebot.File, mi
 	return botCtx.Send(fmt.Sprintf(message.MeetingRegistered, meetingId), telebot.ModeMarkdown)
 }
 
-func (b *Bot) sendMeetingsList(
-	botCtx telebot.Context, meetings []models.Meeting, total, offset int,
-) error {
-	if len(meetings) == 0 {
-		if offset == 0 {
-			return botCtx.Send(message.NoMeetings, telebot.ModeMarkdown)
-		}
-		return botCtx.Send(message.NoMoreMeetings, telebot.ModeMarkdown)
+func (b *Bot) sendNoMeetings(botCtx telebot.Context, offset int, msgNoMeetings string) error {
+	if offset == 0 {
+		return botCtx.Send(msgNoMeetings, telebot.ModeMarkdown)
 	}
-
-	msg := message.MeetingsWithSummaryList(meetings, total, b.cfg.UI.DateFormat, b.cfg.UI.SummaryMaxLength)
-	return botCtx.Send(msg, telebot.ModeMarkdown)
+	return botCtx.Send(message.NoMoreMeetings, telebot.ModeMarkdown)
 }

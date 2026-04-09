@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"iter"
 
 	"github.com/dsnikitin/sowhat/internal/infrastructure/db/postgres"
 	"github.com/dsnikitin/sowhat/internal/models"
@@ -67,10 +68,7 @@ const getNotCompletedTranscriptionsSQL = `
 	WHERE NOT t.is_completed
 `
 
-func (r *TranscriptionRepository) GetNotCompletedTranscriptions(ctx context.Context) ([]models.Transcription, error) {
+func (r *TranscriptionRepository) GetNotCompletedTranscriptions(ctx context.Context) iter.Seq2[models.Transcription, error] {
 	fieldsPointer := func(m *models.Transcription) []any { return m.ScanFields() }
-
-	trs, err := postgres.Query(
-		ctx, r.db, getNotCompletedTranscriptionsSQL, pgx.NamedArgs{}, fieldsPointer)
-	return trs, errors.Wrap(err, "query")
+	return postgres.Query(ctx, r.db, getNotCompletedTranscriptionsSQL, pgx.NamedArgs{}, fieldsPointer)
 }

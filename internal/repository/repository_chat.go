@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"iter"
 
 	"github.com/dsnikitin/sowhat/internal/infrastructure/db/postgres"
 	"github.com/dsnikitin/sowhat/internal/models"
@@ -40,12 +41,11 @@ const getMessagesSQL = `
 	ORDER BY created_at
 `
 
-func (r *ChatRepository) GetMessages(ctx context.Context, userID int64) ([]models.ChatMessage, error) {
+func (r *ChatRepository) GetMessages(ctx context.Context, userID int64) iter.Seq2[models.ChatMessage, error] {
 	args := pgx.NamedArgs{"userID": userID}
 	fieldsPointer := func(m *models.ChatMessage) []any { return m.ScanFields() }
 
-	msgs, err := postgres.Query(ctx, r.db, getMessagesSQL, args, fieldsPointer)
-	return msgs, errors.Wrap(err, "query")
+	return postgres.Query(ctx, r.db, getMessagesSQL, args, fieldsPointer)
 }
 
 const deleteMessagesSQL = `

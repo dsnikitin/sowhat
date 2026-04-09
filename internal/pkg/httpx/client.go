@@ -43,7 +43,7 @@ func (c *Client) DoRequestWithContext(
 		if err := body.Close(); err != nil {
 			logger.Log.Errorw("Failed to close response body", "error", err)
 		}
-	}(req.Body)
+	}(resp.Body)
 
 	if resp.StatusCode != 200 {
 		switch resp.StatusCode {

@@ -2,7 +2,7 @@ package repository
 
 import (
 	"context"
-	"strings"
+	"iter"
 
 	"github.com/dsnikitin/sowhat/internal/infrastructure/db/postgres"
 	"github.com/dsnikitin/sowhat/internal/models"
@@ -56,13 +56,10 @@ const listMeetingsSQL = `
 	LIMIT @limit OFFSET @offset
 `
 
-func (r *MeetingRepository) ListMeetings(ctx context.Context, userID int64, limit, offset int) ([]models.Meeting, int, error) {
-	var total int
+func (r *MeetingRepository) ListMeetings(ctx context.Context, userID int64, limit, offset int) iter.Seq2[models.MeetingWithTotal, error] {
 	args := pgx.NamedArgs{"userID": userID, "limit": limit, "offset": offset}
-	fieldsPointer := func(m *models.Meeting) []any { return append(m.ScanFields(), &total) }
-
-	meetings, err := postgres.Query(ctx, r.db, listMeetingsSQL, args, fieldsPointer)
-	return meetings, total, errors.Wrap(err, "query")
+	fieldsPointer := func(m *models.MeetingWithTotal) []any { return m.ScanFields() }
+	return postgres.Query(ctx, r.db, listMeetingsSQL, args, fieldsPointer)
 }
 
 const findMeetingsSQL = `
@@ -78,19 +75,10 @@ const findMeetingsSQL = `
 
 func (r *MeetingRepository) FindMeetings(
 	ctx context.Context, userID int64, query string, limit, offset int,
-) ([]models.Meeting, int, error) {
-	query = strings.TrimSpace(query)
-
-	if query == "" {
-		return []models.Meeting{}, 0, nil
-	}
-
-	var total int
+) iter.Seq2[models.MeetingWithTotal, error] {
 	args := pgx.NamedArgs{"userID": userID, "query": query, "limit": limit, "offset": offset}
-	fieldsPointer := func(m *models.Meeting) []any { return append(m.ScanFields(), &total) }
-
-	meetings, err := postgres.Query(ctx, r.db, findMeetingsSQL, args, fieldsPointer)
-	return meetings, total, errors.Wrap(err, "query")
+	fieldsPointer := func(m *models.MeetingWithTotal) []any { return m.ScanFields() }
+	return postgres.Query(ctx, r.db, findMeetingsSQL, args, fieldsPointer)
 }
 
 const updateMeetingSQL = `
@@ -131,10 +119,8 @@ const getFileIDsSQL = `
 	WHERE user_id = @userID AND chatter_file_id IS NOT NULL
 `
 
-func (r *MeetingRepository) GetFileIDs(ctx context.Context, userID int64) ([]string, error) {
+func (r *MeetingRepository) GetFileIDs(ctx context.Context, userID int64) iter.Seq2[string, error] {
 	args := pgx.NamedArgs{"userID": userID}
 	fieldsPointer := func(id *string) []any { return []any{id} }
-
-	ids, err := postgres.Query(ctx, r.db, getFileIDsSQL, args, fieldsPointer)
-	return ids, errors.Wrap(err, "query")
+	return postgres.Query(ctx, r.db, getFileIDsSQL, args, fieldsPointer)
 }

@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"io"
+	"iter"
 	"mime/multipart"
 	"net/http"
 
@@ -45,12 +46,19 @@ func (g *GigaChat) Summarize(transcript string) (string, error) {
 }
 
 func (g *GigaChat) Chat(
-	ctx context.Context, query string, fileIDs []string, history []models.ChatMessage,
+	ctx context.Context, query string, fileIDs []string, history iter.Seq2[models.ChatMessage, error],
 ) (models.ChatMessage, error) {
-	msgs := make([]Message, 0, len(history)+2)
+	msgs := make([]Message, 0, 2)
+	sessionId := uuid.New().String()
 
 	msgs = append(msgs, Message{Role: "system", Content: chatAboutMeetingsSystemPrompt})
-	for _, m := range history {
+	for m, err := range history {
+		if err != nil {
+			return models.ChatMessage{}, errors.Wrap(err, "iterate history")
+		}
+
+		sessionId = m.ChatID
+
 		msgs = append(msgs,
 			Message{Role: "user", Content: m.Query},
 			Message{Role: "assistant", Content: m.Answer},
@@ -58,13 +66,7 @@ func (g *GigaChat) Chat(
 	}
 	msgs = append(msgs, Message{Role: "user", Content: query, Attachments: fileIDs})
 
-	sessionId := uuid.New().String()
-	headers := make(map[string]string)
-	if len(history) > 0 {
-		sessionId = history[0].ChatID
-		headers["X-Session-ID"] = sessionId
-	}
-
+	headers := map[string]string{"X-Session-ID": sessionId}
 	answer, err := g.complete(msgs, headers)
 	if err != nil {
 		return models.ChatMessage{}, errors.Wrap(err, "complete")

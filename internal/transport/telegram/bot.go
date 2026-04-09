@@ -48,7 +48,7 @@ func New(
 		return nil, err
 	}
 
-	logger.Log.Info("Successfuly connected to Telegram API")
+	logger.Log.Info("Successfully connected to Telegram API")
 
 	bot := &Bot{
 		appCtx:       appCtx,

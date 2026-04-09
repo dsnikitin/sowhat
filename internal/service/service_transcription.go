@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"iter"
 	"slices"
 	"strings"
 	"time"
@@ -58,7 +59,7 @@ type TranscriptionRepository interface {
 	CreateTranscription(ctx context.Context, meetingID int64) error
 	UpdateTranscription(ctx context.Context, tr models.Transcription) error
 	UpdateMeeting(ctx context.Context, meeting models.Meeting) error
-	GetNotCompletedTranscriptions(ctx context.Context) ([]models.Transcription, error)
+	GetNotCompletedTranscriptions(ctx context.Context) iter.Seq2[models.Transcription, error]
 }
 
 type TranscriptionConfig struct {
@@ -156,19 +157,18 @@ func (s *TranscriptionService) RestartNotCompleted() {
 	ctx, cancel := context.WithTimeout(s.appCtx, time.Second*30)
 	defer cancel()
 
-	trs, err := s.r.GetNotCompletedTranscriptions(ctx)
-	if err != nil {
-		switch {
-		case errors.Is(err, context.DeadlineExceeded):
-			logger.Log.Warnw("Failed to get not completed transcriptions", "error", err.Error())
-			return
-		default:
-			logger.Log.Errorw("Failed to get not completed transcriptions", "error", err.Error())
-			return
+	for tr, err := range s.r.GetNotCompletedTranscriptions(ctx) {
+		if err != nil {
+			switch {
+			case errors.Is(err, context.DeadlineExceeded):
+				logger.Log.Warnw("Failed to get not completed transcriptions", "error", err.Error())
+				return
+			default:
+				logger.Log.Errorw("Failed to get not completed transcriptions", "error", err.Error())
+				return
+			}
 		}
-	}
 
-	for _, tr := range trs {
 		// TODO - нужно хранить подписки в БД, чтобы восстановить
 		// if err := s.p.SubscribeForEvent(tr.Meeting.ID, subscriberID); err != nil {
 		// 	logger.Log.Errorw("Failed to subscribe for event",
@@ -190,7 +190,7 @@ func (s *TranscriptionService) RestartNotCompleted() {
 		case tr.Meeting.Summary == nil:
 			err = s.put(s.summarizeStage, tr)
 		case tr.Meeting.ChatterFileId == nil:
-			err = s.put(s.chatStage, tr)
+			err = s.put(s.finalizeStage, tr) // TODO исправить стадию
 		default:
 			err = s.put(s.finalizeStage, tr)
 		}

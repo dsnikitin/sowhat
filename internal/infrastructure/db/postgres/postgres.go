@@ -2,6 +2,7 @@ package postgres
 
 import (
 	"context"
+	"iter"
 	"strings"
 	"time"
 
@@ -134,33 +135,40 @@ func QueryRow[T any](
 
 func Query[T any](
 	ctx context.Context, db *DB, sql string, args pgx.NamedArgs, fieldsPointer func(*T) []any,
-) (objs []T, err error) {
-	var rows pgx.Rows
-	if db.tx != nil {
-		rows, err = db.tx.Query(ctx, sql, args)
-	} else {
-		rows, err = db.pool.Query(ctx, sql, args)
-	}
+) iter.Seq2[T, error] {
+	return func(yield func(T, error) bool) {
+		var (
+			emptyObj T
+			rows     pgx.Rows
+			err      error
+		)
+		if db.tx != nil {
+			rows, err = db.tx.Query(ctx, sql, args)
+		} else {
+			rows, err = db.pool.Query(ctx, sql, args)
+		}
+		if err != nil {
+			yield(emptyObj, errors.Wrap(err, "query"))
+			return
+		}
+		defer rows.Close()
 
-	if err != nil {
-		return nil, errors.Wrap(err, "query")
-	}
-	defer rows.Close()
+		for rows.Next() {
+			var obj T
+			if err := rows.Scan(fieldsPointer(&obj)...); err != nil {
+				yield(emptyObj, errors.Wrap(err, "scan"))
+				return
+			}
 
-	for rows.Next() {
-		var obj T
-		if err := rows.Scan(fieldsPointer(&obj)...); err != nil {
-			return nil, errors.Wrap(err, "scan db row")
+			if !yield(obj, nil) {
+				return
+			}
 		}
 
-		objs = append(objs, obj)
+		if err = rows.Err(); err != nil {
+			yield(emptyObj, errors.Wrap(err, "rows error"))
+		}
 	}
-
-	if err = rows.Err(); err != nil {
-		return nil, errors.Wrap(err, "iteration error")
-	}
-
-	return objs, nil
 }
 
 func connect(cfg *Config) (*pgxpool.Pool, error) {
@@ -180,7 +188,7 @@ func connect(cfg *Config) (*pgxpool.Pool, error) {
 	}
 
 	logger.Log.Infow(
-		"Successfuly connected to Postgres DB",
+		"Successfully connected to Postgres DB",
 		"name", pool.Config().ConnConfig.Database,
 		"host", pool.Config().ConnConfig.Host,
 		"port", pool.Config().ConnConfig.Port,

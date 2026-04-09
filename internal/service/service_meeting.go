@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"iter"
 
 	"github.com/dsnikitin/sowhat/internal/models"
 	"github.com/google/uuid"
@@ -11,8 +12,8 @@ import (
 type MeetingRepository interface {
 	CreateMeeting(ctx context.Context, userID int64) (int64, error)
 	GetMeeting(ctx context.Context, id, userID int64) (models.Meeting, error)
-	ListMeetings(ctx context.Context, userID int64, limit, offset int) ([]models.Meeting, int, error)
-	FindMeetings(ctx context.Context, userID int64, query string, limit, offset int) ([]models.Meeting, int, error)
+	ListMeetings(ctx context.Context, userID int64, limit, offset int) iter.Seq2[models.MeetingWithTotal, error]
+	FindMeetings(ctx context.Context, userID int64, query string, limit, offset int) iter.Seq2[models.MeetingWithTotal, error]
 }
 
 type Transcription interface {
@@ -46,10 +47,10 @@ func (s *MeetingService) GetMeeting(ctx context.Context, userID, meetingID int64
 	return s.r.GetMeeting(ctx, meetingID, userID)
 }
 
-func (s *MeetingService) ListMeetings(ctx context.Context, userID int64, limit, offset int) ([]models.Meeting, int, error) {
+func (s *MeetingService) ListMeetings(ctx context.Context, userID int64, limit, offset int) iter.Seq2[models.MeetingWithTotal, error] {
 	return s.r.ListMeetings(ctx, userID, limit, offset)
 }
 
-func (s *MeetingService) FindMeetings(ctx context.Context, userID int64, query string, limit, offset int) ([]models.Meeting, int, error) {
+func (s *MeetingService) FindMeetings(ctx context.Context, userID int64, query string, limit, offset int) iter.Seq2[models.MeetingWithTotal, error] {
 	return s.r.FindMeetings(ctx, userID, query, limit, offset)
 }

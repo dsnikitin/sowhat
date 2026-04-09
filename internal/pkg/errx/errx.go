@@ -12,6 +12,7 @@ var (
 	ErrAccessTokenExpired          = errors.New("access token expired")
 	ErrRecognitionTaskNotCompleted = errors.New("recognition task is not completed")
 	ErrRecognitionTaskFailed       = errors.New("recognition is failed")
+	ErrEmptyList                   = errors.New("empty list")
 	ErrTooEarly                    = errors.New("too early")
 	ErrNoFilesForQuestion          = errors.New("no files for question")
 	ErrBadRequest                  = errors.New("bad request")

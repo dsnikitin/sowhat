@@ -35,3 +35,12 @@ func (m Meeting) MarshalJSON() ([]byte, error) {
 
 	return json.Marshal(resp)
 }
+
+type MeetingWithTotal struct {
+	Meeting
+	Total int
+}
+
+func (m *MeetingWithTotal) ScanFields() []any {
+	return append(m.Meeting.ScanFields(), &m.Total)
+}
