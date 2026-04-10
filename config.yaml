@@ -29,6 +29,7 @@ gigachat:
   rest_api:
     completions: https://gigachat.devices.sberbank.ru/api/v1/chat/completions
     upload_file: https://gigachat.devices.sberbank.ru/api/v1/files
+  can_be_myself: true
 postgres_db:
   migrations_path: ./migrations
 log:

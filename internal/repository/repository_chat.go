@@ -43,7 +43,7 @@ const getMessagesSQL = `
 
 func (r *ChatRepository) GetMessages(ctx context.Context, userID int64) iter.Seq2[models.ChatMessage, error] {
 	args := pgx.NamedArgs{"userID": userID}
-	fieldsPointer := func(m *models.ChatMessage) []any { return m.ScanFields() }
+	fieldsPointer := func(m *models.ChatMessage) []any { return m.FieldPointers() }
 
 	return postgres.Query(ctx, r.db, getMessagesSQL, args, fieldsPointer)
 }

@@ -24,7 +24,7 @@ func NewClient() *Client {
 }
 
 func (c *Client) DoRequestWithContext(
-	ctx context.Context, method string, url string, headers map[string]string, body io.Reader, result any,
+	ctx context.Context, method string, url string, headers map[string]string, body io.Reader, jsonRes any,
 ) error {
 	req, err := http.NewRequestWithContext(ctx, method, url, body)
 	if err != nil {
@@ -75,9 +75,6 @@ func (c *Client) DoRequestWithContext(
 		return errors.Wrapf(err, "error response code received: code %d, error %s", resp.StatusCode, string(body))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-		return errors.Wrap(err, "decode response body")
-	}
-
-	return nil
+	err = json.NewDecoder(resp.Body).Decode(jsonRes)
+	return errors.Wrap(err, "decode response body")
 }

@@ -69,6 +69,6 @@ const getNotCompletedTranscriptionsSQL = `
 `
 
 func (r *TranscriptionRepository) GetNotCompletedTranscriptions(ctx context.Context) iter.Seq2[models.Transcription, error] {
-	fieldsPointer := func(m *models.Transcription) []any { return m.ScanFields() }
+	fieldsPointer := func(m *models.Transcription) []any { return m.FieldPointers() }
 	return postgres.Query(ctx, r.db, getNotCompletedTranscriptionsSQL, pgx.NamedArgs{}, fieldsPointer)
 }

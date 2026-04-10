@@ -14,6 +14,6 @@ type User struct {
 	RegisteredAt time.Time
 }
 
-func (u *User) ScanFields() []any {
+func (u *User) FieldPointers() []any {
 	return []any{&u.ID, &u.ExternalID, &u.Name, &u.Platform, &u.RegisteredAt}
 }

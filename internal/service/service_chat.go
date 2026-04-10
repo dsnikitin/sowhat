@@ -9,7 +9,9 @@ import (
 )
 
 type Chatter interface {
-	Chat(ctx context.Context, query string, fileIDs []string, history iter.Seq2[models.ChatMessage, error]) (models.ChatMessage, error)
+	Chat(
+		ctx context.Context, query string, fileIDs iter.Seq2[string, error], history iter.Seq2[models.ChatMessage, error],
+	) (models.ChatMessage, error)
 }
 
 type ChatRepository interface {
@@ -29,16 +31,7 @@ func NewChatService(ch Chatter, r ChatRepository) *ChatService {
 }
 
 func (s *ChatService) NewChat(ctx context.Context, userID int64, query string) (string, error) {
-	// fileIDs, err := s.r.GetFileIDs(ctx, userID)
-	// if err != nil {
-	// 	return "", errors.Wrap(err, "get file ids")
-	// }
-
-	// if len(fileIDs) == 0 {
-	// 	return "", errx.ErrNoFilesForQuestion
-	// }
-
-	fileIDs := []string{}
+	fileIDs := s.r.GetFileIDs(ctx, userID)
 
 	msg, err := s.ch.Chat(ctx, query, fileIDs, func(func(models.ChatMessage, error) bool) {})
 	if err != nil {
@@ -57,18 +50,10 @@ func (s *ChatService) NewChat(ctx context.Context, userID int64, query string) (
 }
 
 func (s *ChatService) ContinueChat(ctx context.Context, userID int64, query string) (string, error) {
-	// fileIDs, err := s.r.GetFileIDs(ctx, userID)
-	// if err != nil {
-	// 	return "", errors.Wrap(err, "get file ids")
-	// }
+	fileIDs := s.r.GetFileIDs(ctx, userID)
+	history := s.r.GetMessages(ctx, userID)
 
-	// if len(fileIDs) == 0 {
-	// 	return "", errx.ErrNoFilesForQuestion
-	// }
-	fileIDs := []string{}
-	iter := s.r.GetMessages(ctx, userID)
-
-	msg, err := s.ch.Chat(ctx, query, fileIDs, iter)
+	msg, err := s.ch.Chat(ctx, query, fileIDs, history)
 	if err != nil {
 		return "", errors.Wrap(err, "continue chat with chatter")
 	}

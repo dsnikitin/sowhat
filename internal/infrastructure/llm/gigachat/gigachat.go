@@ -4,12 +4,15 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"iter"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 
 	"github.com/dsnikitin/sowhat/internal/models"
+	"github.com/dsnikitin/sowhat/internal/pkg/errx"
 	"github.com/dsnikitin/sowhat/internal/pkg/httpx"
 	"github.com/google/uuid"
 	"github.com/pkg/errors"
@@ -46,8 +49,22 @@ func (g *GigaChat) Summarize(transcript string) (string, error) {
 }
 
 func (g *GigaChat) Chat(
-	ctx context.Context, query string, fileIDs []string, history iter.Seq2[models.ChatMessage, error],
+	ctx context.Context, query string, fileIDs iter.Seq2[string, error], history iter.Seq2[models.ChatMessage, error],
 ) (models.ChatMessage, error) {
+	fIDs := []string{}
+	for id, err := range fileIDs {
+		if err != nil {
+			return models.ChatMessage{}, errors.Wrap(err, "iterate fileIDs")
+		}
+		fIDs = append(fIDs, id)
+	}
+
+	if len(fIDs) == 0 && !g.cfg.CanBeMyself {
+		return models.ChatMessage{}, errx.ErrNoFilesForQuestion
+	}
+
+	fmt.Println("FILEIDS = ", fIDs)
+
 	msgs := make([]Message, 0, 2)
 	sessionId := uuid.New().String()
 
@@ -64,7 +81,7 @@ func (g *GigaChat) Chat(
 			Message{Role: "assistant", Content: m.Answer},
 		)
 	}
-	msgs = append(msgs, Message{Role: "user", Content: query, Attachments: fileIDs})
+	msgs = append(msgs, Message{Role: "user", Content: query, Attachments: fIDs})
 
 	headers := map[string]string{"X-Session-ID": sessionId}
 	answer, err := g.complete(msgs, headers)
@@ -106,46 +123,46 @@ func (g *GigaChat) UploadFile(fileContent io.Reader, contentType string) (string
 		return "", errors.Wrap(err, "get access token")
 	}
 
-	reqBody, err := buildMultipartBody(fileContent)
-	if err != nil {
+	reqBody := &bytes.Buffer{}
+	writer := multipart.NewWriter(reqBody)
+
+	if err := writeMultipartBody(fileContent, writer, contentType); err != nil {
 		return "", errors.Wrap(err, "build multipart body")
 	}
 
 	headers := map[string]string{
-		"Content-Type":  "multipart/form-data",
+		"Content-Type":  writer.FormDataContentType(),
 		"Accept":        "application/json",
 		"Authorization": "Bearer " + accessToken,
+	}
+
+	if err := writer.Close(); err != nil {
+		return "", errors.Wrap(err, "close multipart writer")
 	}
 
 	var res UploadResponse
 	err = g.client.DoRequestWithContext(
 		g.appCtx, http.MethodPost, g.cfg.RestAPI.UploadFile, headers, reqBody, &res)
 	if err != nil {
-		return "error_id", nil // TODO
-		// return "", errors.Wrap(err, "do http request with context")
+		return "", errors.Wrap(err, "do http request with context")
 	}
 
-	return "some_id", nil // TODO
-	// return res.FileId, nil
+	return res.FileId, nil
 }
 
-func buildMultipartBody(fileContent io.Reader) (*bytes.Buffer, error) {
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-	defer writer.Close()
-
+func writeMultipartBody(fileContent io.Reader, writer *multipart.Writer, contentType string) error {
 	if err := writer.WriteField("purpose", "general"); err != nil {
-		return nil, errors.Wrap(err, "write purpose filed")
+		return errors.Wrap(err, "write purpose filed")
 	}
 
-	part, err := writer.CreateFormFile("file", "file.txt")
+	partHeader := make(textproto.MIMEHeader)
+	partHeader.Set("Content-Disposition", `form-data; name="file"; filename="file.txt"`)
+	partHeader.Set("Content-Type", contentType)
+	part, err := writer.CreatePart(partHeader)
 	if err != nil {
-		return nil, errors.Wrap(err, "create form-data")
+		return errors.Wrap(err, "create form-data")
 	}
 
-	if _, err := io.Copy(part, fileContent); err != nil {
-		return nil, errors.Wrap(err, "copy file content")
-	}
-
-	return body, nil
+	_, err = io.Copy(part, fileContent)
+	return errors.Wrap(err, "copy file content")
 }

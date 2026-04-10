@@ -17,8 +17,8 @@ type Transcription struct {
 	FileMIME            string
 }
 
-func (t *Transcription) ScanFields() []any {
-	return append(t.Meeting.ScanFields(),
+func (t *Transcription) FieldPointers() []any {
+	return append(t.Meeting.FieldPointers(),
 		&t.TranscriberRqFileID, &t.TranscriberTaskID, &t.TranscriberRsFileID, &t.IsCompleted)
 }
 

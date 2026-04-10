@@ -139,8 +139,8 @@ func (s *TranscriptionService) start() {
 		s.eg.Go(func() error {
 			return s.process(download, s.downloadStage, s.summarizeStage, s.downloadTranscript, s.updateMeeting)
 		})
-		s.eg.Go(func() error { // TODO исправить следущую стадию
-			return s.process(summarize, s.summarizeStage, s.finalizeStage, s.summarize, s.updateMeeting)
+		s.eg.Go(func() error {
+			return s.process(summarize, s.summarizeStage, s.chatStage, s.summarize, s.updateMeeting)
 		})
 		s.eg.Go(func() error {
 			return s.process(chat, s.chatStage, s.finalizeStage, s.uploadFileToChatter, s.updateMeeting)

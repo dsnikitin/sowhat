@@ -36,7 +36,7 @@ const getUserSQL = `
 
 func (r *UserRepository) GetUserByID(ctx context.Context, userID int64, pt platform.Type) (models.User, error) {
 	args := pgx.NamedArgs{"id": userID, "platform": pt}
-	fieldsPointer := func(u *models.User) []any { return u.ScanFields() }
+	fieldsPointer := func(u *models.User) []any { return u.FieldPointers() }
 
 	user, err := postgres.QueryRow(ctx, r.db, getUserSQL, args, fieldsPointer)
 	return user, errors.Wrap(err, "query row")
@@ -50,7 +50,7 @@ const getUserByExternalIDSQL = `
 
 func (r *UserRepository) GetUserByExternalID(ctx context.Context, externalID string, pt platform.Type) (models.User, error) {
 	args := pgx.NamedArgs{"externalID": externalID, "platform": pt}
-	fieldsPointer := func(u *models.User) []any { return u.ScanFields() }
+	fieldsPointer := func(u *models.User) []any { return u.FieldPointers() }
 
 	user, err := postgres.QueryRow(ctx, r.db, getUserByExternalIDSQL, args, fieldsPointer)
 	return user, errors.Wrap(err, "query row")

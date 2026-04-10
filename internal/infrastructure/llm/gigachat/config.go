@@ -7,8 +7,9 @@ import (
 )
 
 type Config struct {
-	OAuth   *oauth.Config `envPrefix:"OAUTH_" yaml:"oauth"`
-	RestAPI *apiConfig    `envPrefix:"REST_API_" yaml:"rest_api"`
+	OAuth       *oauth.Config `envPrefix:"OAUTH_" yaml:"oauth"`
+	RestAPI     *apiConfig    `envPrefix:"REST_API_" yaml:"rest_api"`
+	CanBeMyself bool          `env:"CAN_BE_MYSELF" yaml:"can_be_myself"`
 }
 
 func (c Config) Validate() error {

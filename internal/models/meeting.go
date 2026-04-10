@@ -16,7 +16,7 @@ type Meeting struct {
 	RawTranscript         *string
 }
 
-func (m *Meeting) ScanFields() []any {
+func (m *Meeting) FieldPointers() []any {
 	return []any{
 		&m.ID, &m.UserID, &m.Transcript, &m.Summary, &m.ChatterFileId,
 		&m.IsTranscriptionFailed, &m.CreatedAt, &m.RawTranscript,
@@ -41,6 +41,6 @@ type MeetingWithTotal struct {
 	Total int
 }
 
-func (m *MeetingWithTotal) ScanFields() []any {
-	return append(m.Meeting.ScanFields(), &m.Total)
+func (m *MeetingWithTotal) FieldPointers() []any {
+	return append(m.Meeting.FieldPointers(), &m.Total)
 }

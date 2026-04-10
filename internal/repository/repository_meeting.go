@@ -41,7 +41,7 @@ const getMeetingSQL = `
 
 func (r *MeetingRepository) GetMeeting(ctx context.Context, id, userID int64) (models.Meeting, error) {
 	args := pgx.NamedArgs{"id": id, "userID": userID}
-	fieldsPointer := func(m *models.Meeting) []any { return m.ScanFields() }
+	fieldsPointer := func(m *models.Meeting) []any { return m.FieldPointers() }
 
 	resp, err := postgres.QueryRow(ctx, r.db, getMeetingSQL, args, fieldsPointer)
 	return resp, errors.Wrap(err, "query one")
@@ -58,7 +58,7 @@ const listMeetingsSQL = `
 
 func (r *MeetingRepository) ListMeetings(ctx context.Context, userID int64, limit, offset int) iter.Seq2[models.MeetingWithTotal, error] {
 	args := pgx.NamedArgs{"userID": userID, "limit": limit, "offset": offset}
-	fieldsPointer := func(m *models.MeetingWithTotal) []any { return m.ScanFields() }
+	fieldsPointer := func(m *models.MeetingWithTotal) []any { return m.FieldPointers() }
 	return postgres.Query(ctx, r.db, listMeetingsSQL, args, fieldsPointer)
 }
 
@@ -77,7 +77,7 @@ func (r *MeetingRepository) FindMeetings(
 	ctx context.Context, userID int64, query string, limit, offset int,
 ) iter.Seq2[models.MeetingWithTotal, error] {
 	args := pgx.NamedArgs{"userID": userID, "query": query, "limit": limit, "offset": offset}
-	fieldsPointer := func(m *models.MeetingWithTotal) []any { return m.ScanFields() }
+	fieldsPointer := func(m *models.MeetingWithTotal) []any { return m.FieldPointers() }
 	return postgres.Query(ctx, r.db, findMeetingsSQL, args, fieldsPointer)
 }
 
@@ -116,7 +116,9 @@ func (r *MeetingRepository) UpdateMeeting(ctx context.Context, meeting models.Me
 const getFileIDsSQL = `
 	SELECT chatter_file_id
 	FROM sowhat.meetings
-	WHERE user_id = @userID AND chatter_file_id IS NOT NULL
+	WHERE user_id = @userID
+		AND NOT is_transcription_failed
+		AND chatter_file_id IS NOT NULL 
 `
 
 func (r *MeetingRepository) GetFileIDs(ctx context.Context, userID int64) iter.Seq2[string, error] {
