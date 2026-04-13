@@ -109,7 +109,7 @@ func (a *Authorizer) getAccessToken(cfg *Config) (time.Time, error) {
 		existingToken.mu.Unlock()
 	}
 
-	logger.Log.Infow("Successfully got access token", "consuner", cfg.Consumer)
+	logger.Log.Infow("Successfully got access token", "consumer", cfg.Consumer)
 	return expiresAt, nil
 }
 

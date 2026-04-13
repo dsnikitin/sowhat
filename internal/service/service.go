@@ -20,7 +20,7 @@ type Service struct {
 func New(
 	appCtx context.Context, cfg *TranscriptionConfig,
 	r Repository, t Transcriber, sum Summarizer,
-	chUp ChatFilesUploader, ch Chatter,
+	chUp TranscriptUploader, ch Chatter,
 ) *Service {
 	s := &Service{
 		UserService:      NewUserService(r),

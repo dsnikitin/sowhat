@@ -117,7 +117,7 @@ func (g *GigaChat) complete(msgs []Message, headers map[string]string) (string, 
 	return res.Choices[0].Message.Content, nil
 }
 
-func (g *GigaChat) UploadFile(fileContent io.Reader, contentType string) (string, error) {
+func (g *GigaChat) Upload(content io.Reader, contentType string) (string, error) {
 	accessToken, err := g.authorizer.GetAccessToken(g.cfg.OAuth.AuthToken)
 	if err != nil {
 		return "", errors.Wrap(err, "get access token")
@@ -126,7 +126,7 @@ func (g *GigaChat) UploadFile(fileContent io.Reader, contentType string) (string
 	reqBody := &bytes.Buffer{}
 	writer := multipart.NewWriter(reqBody)
 
-	if err := writeMultipartBody(fileContent, writer, contentType); err != nil {
+	if err := writeMultipartBody(content, writer, contentType); err != nil {
 		return "", errors.Wrap(err, "build multipart body")
 	}
 

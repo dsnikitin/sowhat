@@ -17,7 +17,7 @@ type MeetingRepository interface {
 }
 
 type Transcription interface {
-	AsyncTranscribe(userID int64, file models.File, subscriberID uuid.UUID) error
+	AsyncTranscribe(ctx context.Context, userID int64, file models.MeetingFile, subscriberID uuid.UUID) error
 }
 
 type MeetingService struct {
@@ -29,14 +29,14 @@ func NewMeetingService(t Transcription, r MeetingRepository) *MeetingService {
 	return &MeetingService{t: t, r: r}
 }
 
-func (s *MeetingService) RegisterMeeting(ctx context.Context, userID int64, file models.File, subscriberID uuid.UUID) (int64, error) {
+func (s *MeetingService) RegisterMeeting(ctx context.Context, userID int64, file models.MeetingFile, subscriberID uuid.UUID) (int64, error) {
 	meetingID, err := s.r.CreateMeeting(ctx, userID)
 	if err != nil {
 		return 0, errors.Wrap(err, "create meeting")
 	}
 
 	file.MeetingID = meetingID
-	if err = s.t.AsyncTranscribe(userID, file, subscriberID); err != nil {
+	if err = s.t.AsyncTranscribe(ctx, userID, file, subscriberID); err != nil {
 		return 0, errors.Wrap(err, "async transcribe")
 	}
 

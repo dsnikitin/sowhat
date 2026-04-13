@@ -37,6 +37,7 @@ log:
   is_develop: true
 transcription_service:
   workers_count: 10
-  queue_limit: 100
+  input_queue_limit: 100
+  process_queue_limit: 100
   max_stage_attempts_count: 5
   attempts_interval: 5s

@@ -2,6 +2,7 @@ package models
 
 import (
 	"encoding/json"
+	"io"
 	"time"
 )
 
@@ -43,4 +44,11 @@ type MeetingWithTotal struct {
 
 func (m *MeetingWithTotal) FieldPointers() []any {
 	return append(m.Meeting.FieldPointers(), &m.Total)
+}
+
+type MeetingFile struct {
+	MeetingID int64
+	Reader    io.Reader
+	MIME      string
+	Size      int64
 }

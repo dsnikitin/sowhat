@@ -72,3 +72,19 @@ func (r *TranscriptionRepository) GetNotCompletedTranscriptions(ctx context.Cont
 	fieldsPointer := func(m *models.Transcription) []any { return m.FieldPointers() }
 	return postgres.Query(ctx, r.db, getNotCompletedTranscriptionsSQL, pgx.NamedArgs{}, fieldsPointer)
 }
+
+const isTranscriptionExistsSQL = `
+	SELECT EXISTS (
+		SELECT 1
+		FROM sowhat.transcriptions
+		WHERE meeting_id = @meetingID
+	)
+`
+
+func (r *TranscriptionRepository) IsTranscriptionExists(ctx context.Context, meetingID int64) (bool, error) {
+	args := pgx.NamedArgs{"meetingID": meetingID}
+	fieldsPointer := func(exists *bool) []any { return []any{exists} }
+
+	exists, err := postgres.QueryRow(ctx, r.db, isTranscriptionExistsSQL, args, fieldsPointer)
+	return exists, errors.Wrap(err, "query row")
+}

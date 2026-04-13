@@ -3,6 +3,8 @@ package models
 import (
 	"io"
 	"time"
+
+	"github.com/dsnikitin/sowhat/internal/consts/stage"
 )
 
 type Transcription struct {
@@ -22,15 +24,20 @@ func (t *Transcription) FieldPointers() []any {
 		&t.TranscriberRqFileID, &t.TranscriberTaskID, &t.TranscriberRsFileID, &t.IsCompleted)
 }
 
-type File struct {
-	Reader    io.Reader
-	MIME      string
-	Size      int64
-	MeetingID int64
+type TranscriptionStage struct {
+	Name      stage.Name
+	StageFn   func(tr *Transcription) error
+	PersistFn func(tr Transcription) error
 }
 
-type TranscriptionCompletedMsg struct {
-	MeetingID             int64
-	UserID                int64
-	IsTranscriptionFailed bool
+func NewTranscriptionStage(
+	name stage.Name, processFn func(tr *Transcription) error, persistFn func(tr Transcription) error,
+) TranscriptionStage {
+	return TranscriptionStage{Name: name, StageFn: processFn, PersistFn: persistFn}
+}
+
+type TranscriptionCompleteEvent struct {
+	MeetingID int64
+	UserID    int64
+	IsFailed  bool
 }

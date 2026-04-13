@@ -52,7 +52,7 @@ func (s *SaluteSpeech) MinAndMaxFileSize() (int64, int64) {
 	return s.cfg.MinFileSize, s.cfg.MaxFileSize
 }
 
-func (s *SaluteSpeech) UploadFile(fileContent io.Reader, mime string) (string, error) {
+func (s *SaluteSpeech) Upload(content io.Reader, mime string) (string, error) {
 	accessToken, err := s.authorizer.GetAccessToken(s.cfg.OAuth.AuthToken)
 	if err != nil {
 		return "", errors.Wrap(err, "get access token")
@@ -66,7 +66,7 @@ func (s *SaluteSpeech) UploadFile(fileContent io.Reader, mime string) (string, e
 
 	var res UploadResponse
 	err = s.client.DoRequestWithContext(
-		s.appCtx, http.MethodPost, s.cfg.RestAPI.UploadData, headers, fileContent, &res)
+		s.appCtx, http.MethodPost, s.cfg.RestAPI.UploadData, headers, content, &res)
 	if err != nil {
 		return "", errors.Wrap(err, "do http request with context")
 	}
@@ -101,7 +101,7 @@ func (s *SaluteSpeech) AsyncRecognize(fileID, mime string) (string, error) {
 	return res.Result.TaksId, nil
 }
 
-func (s *SaluteSpeech) CheckTaskCompleted(taskID string) (string, error) {
+func (s *SaluteSpeech) CheckRecognitionCompleted(taskID string) (string, error) {
 	accessToken, err := s.authorizer.GetAccessToken(s.cfg.OAuth.AuthToken)
 	if err != nil {
 		return "", errors.Wrap(err, "get access token")

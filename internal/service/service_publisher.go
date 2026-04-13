@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"sync"
 
 	"github.com/dsnikitin/sowhat/internal/models"
@@ -11,7 +12,7 @@ import (
 
 type Subscriber interface {
 	GetID() uuid.UUID
-	Notify(msg models.TranscriptionCompletedMsg) error
+	Notify(msg models.TranscriptionCompleteEvent) error
 }
 
 type PublisherService struct {
@@ -34,7 +35,10 @@ func (p *PublisherService) Subscribe(sub Subscriber) {
 	p.subscribers[sub.GetID()] = sub
 }
 
-func (p *PublisherService) SubscribeForEvent(meetingID int64, subsriberID uuid.UUID) error {
+func (p *PublisherService) SubscribeForEvent(ctx context.Context, meetingID int64, subsriberID uuid.UUID) error {
+	// TODO
+	// добавить сохранение подписок в базу и использовать для этого ctx
+
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
@@ -73,7 +77,7 @@ func (p *PublisherService) DeleteSubscription(meetingID int64) {
 	delete(p.subscribtions, meetingID)
 }
 
-func (p *PublisherService) PublishEvent(msg models.TranscriptionCompletedMsg) {
+func (p *PublisherService) PublishEvent(msg models.TranscriptionCompleteEvent) {
 	if _, ok := p.subscribtions[msg.MeetingID]; !ok {
 		return
 	}
@@ -85,7 +89,7 @@ func (p *PublisherService) PublishEvent(msg models.TranscriptionCompletedMsg) {
 		for _, subscriber := range subscribers {
 			if err := subscriber.Notify(msg); err != nil {
 				logger.Log.Warnw("Failed to notify transcription completed",
-					"subscriber_id", subscriber.GetID(), "meeting_id", msg.MeetingID, "is_transcription_failed", msg.IsTranscriptionFailed)
+					"subscriber_id", subscriber.GetID(), "meeting_id", msg.MeetingID, "is_transcription_failed", msg.IsFailed)
 			}
 		}
 	}

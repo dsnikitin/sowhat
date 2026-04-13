@@ -17,7 +17,7 @@ import (
 )
 
 type MeetingService interface {
-	RegisterMeeting(ctx context.Context, userID int64, file models.File, subscriberID uuid.UUID) (int64, error)
+	RegisterMeeting(ctx context.Context, userID int64, file models.MeetingFile, subscriberID uuid.UUID) (int64, error)
 	GetMeeting(ctx context.Context, userID, meetingID int64) (models.Meeting, error)
 	ListMeetings(ctx context.Context, userID int64, limit, offset int) iter.Seq2[models.MeetingWithTotal, error]
 	FindMeetings(ctx context.Context, userID int64, query string, limit, offset int) iter.Seq2[models.MeetingWithTotal, error]
@@ -172,7 +172,7 @@ func (b *Bot) registerMeeting(botCtx telebot.Context, teleFile *telebot.File, mi
 		return botCtx.Send(message.OperationFailed, telebot.ModeMarkdown)
 	}
 
-	file := models.File{
+	file := models.MeetingFile{
 		Reader: fileRc,
 		MIME:   mime,
 		Size:   teleFile.FileSize,

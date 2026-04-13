@@ -30,7 +30,7 @@ type Bot struct {
 	cfg          *Config
 	subscriberID uuid.UUID
 	service      Service
-	outMsgs      chan (models.TranscriptionCompletedMsg)
+	outMsgs      chan (models.TranscriptionCompleteEvent)
 	stopCh       chan struct{}
 	eg           errgroup.Group
 }
@@ -56,7 +56,7 @@ func New(
 		cfg:          cfg,
 		subscriberID: uuid.New(),
 		service:      service,
-		outMsgs:      make(chan models.TranscriptionCompletedMsg, 100),
+		outMsgs:      make(chan models.TranscriptionCompleteEvent, 100),
 		stopCh:       make(chan struct{}),
 	}
 
@@ -66,7 +66,7 @@ func New(
 	return bot, nil
 }
 
-func (b *Bot) Notify(msg models.TranscriptionCompletedMsg) error {
+func (b *Bot) Notify(msg models.TranscriptionCompleteEvent) error {
 	select {
 	case b.outMsgs <- msg:
 		return nil
