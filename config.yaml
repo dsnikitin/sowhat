@@ -1,0 +1,43 @@
+telegram_bot:
+  request_timeout: 60s
+  poller_timeout: 10s
+  ui:
+    summary_max_length: 800
+    transcript_max_length: 4000
+    meetings_per_page: 5
+    date_format: 02.01.2006 15:04
+salute_speech:
+  oauth:
+    endpoint: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+    scope: SALUTE_SPEECH_PERS
+    refresh_threshold: 2m
+    consumer: SaluteSpeech
+  supported_formats: PCM_S16LE, OPUS, MP3, FLAC, ALAW, MULAW
+  min_file_size: 400
+  max_file_size: 1000000000
+  rest_api:
+    upload_data: https://smartspeech.sber.ru/rest/v1/data:upload
+    async_recognize: https://smartspeech.sber.ru/rest/v1/speech:async_recognize
+    get_task_status: https://smartspeech.sber.ru/rest/v1/task:get
+    download_data: https://smartspeech.sber.ru/rest/v1/data:download
+gigachat:
+  oauth:
+    endpoint: https://ngw.devices.sberbank.ru:9443/api/v2/oauth
+    scope: GIGACHAT_API_PERS
+    refresh_threshold: 2m
+    consumer: GigaChat
+  rest_api:
+    completions: https://gigachat.devices.sberbank.ru/api/v1/chat/completions
+    upload_file: https://gigachat.devices.sberbank.ru/api/v1/files
+  can_be_myself: true
+postgres_db:
+  migrations_path: ./migrations
+log:
+  log_level: info
+  is_develop: true
+transcription_service:
+  workers_count: 10
+  input_queue_limit: 100
+  process_queue_limit: 100
+  max_stage_attempts_count: 5
+  attempts_interval: 5s
