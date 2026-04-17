@@ -73,18 +73,41 @@ func (r *TranscriptionRepository) GetNotCompletedTranscriptions(ctx context.Cont
 	return postgres.Query(ctx, r.db, getNotCompletedTranscriptionsSQL, pgx.NamedArgs{}, fieldsPointer)
 }
 
-const isTranscriptionExistsSQL = `
-	SELECT EXISTS (
-		SELECT 1
-		FROM sowhat.transcriptions
-		WHERE meeting_id = @meetingID
-	)
+const updateMeetingSQL = `
+	UPDATE sowhat.meetings
+	SET transcript = @transcript,
+		summary = @summary,
+		chatter_file_id = @chatterFileID,
+		is_transcription_failed = @isTranscriptionFailed,
+		raw_transcript = @rawTranscript
+	WHERE id = @id
 `
 
-func (r *TranscriptionRepository) IsTranscriptionExists(ctx context.Context, meetingID int64) (bool, error) {
-	args := pgx.NamedArgs{"meetingID": meetingID}
-	fieldsPointer := func(exists *bool) []any { return []any{exists} }
+func (r *TranscriptionRepository) UpdateMeeting(ctx context.Context, meeting models.Meeting) error {
+	args := pgx.NamedArgs{
+		"id":                    meeting.ID,
+		"transcript":            meeting.Transcript,
+		"summary":               meeting.Summary,
+		"chatterFileID":         meeting.ChatterFileId,
+		"isTranscriptionFailed": meeting.IsTranscriptionFailed,
+		"rawTranscript":         meeting.RawTranscript,
+	}
 
-	exists, err := postgres.QueryRow(ctx, r.db, isTranscriptionExistsSQL, args, fieldsPointer)
-	return exists, errors.Wrap(err, "query row")
+	res, err := r.db.Exec(ctx, updateMeetingSQL, args)
+	if err != nil {
+		return errors.Wrap(err, "exec")
+	}
+
+	if res.RowsAffected() == 0 {
+		return errx.ErrNotFound
+	}
+
+	return nil
+}
+
+func (r *TranscriptionRepository) DoTx(ctx context.Context, fn func(*TranscriptionRepository) error) error {
+	return r.db.Tx(ctx, func(db *postgres.DB) error {
+		tx := &TranscriptionRepository{db: db}
+		return fn(tx)
+	})
 }

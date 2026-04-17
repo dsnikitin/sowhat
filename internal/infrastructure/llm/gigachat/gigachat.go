@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"iter"
 	"mime/multipart"
@@ -62,8 +61,6 @@ func (g *GigaChat) Chat(
 	if len(fIDs) == 0 && !g.cfg.CanBeMyself {
 		return models.ChatMessage{}, errx.ErrNoFilesForQuestion
 	}
-
-	fmt.Println("FILEIDS = ", fIDs)
 
 	msgs := make([]Message, 0, 2)
 	sessionId := uuid.New().String()

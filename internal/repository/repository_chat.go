@@ -57,3 +57,17 @@ func (r *ChatRepository) DeleteMessages(ctx context.Context, userID int64) error
 	_, err := r.db.Exec(ctx, deleteMessagesSQL, pgx.NamedArgs{"userID": userID})
 	return errors.Wrap(err, "exec")
 }
+
+const getFileIDsSQL = `
+	SELECT chatter_file_id
+	FROM sowhat.meetings
+	WHERE user_id = @userID
+		AND NOT is_transcription_failed
+		AND chatter_file_id IS NOT NULL 
+`
+
+func (r *ChatRepository) GetFileIDs(ctx context.Context, userID int64) iter.Seq2[string, error] {
+	args := pgx.NamedArgs{"userID": userID}
+	fieldsPointer := func(id *string) []any { return []any{id} }
+	return postgres.Query(ctx, r.db, getFileIDsSQL, args, fieldsPointer)
+}

@@ -19,7 +19,8 @@ type Service struct {
 
 func New(
 	appCtx context.Context, cfg *TranscriptionConfig,
-	r Repository, t Transcriber, sum Summarizer,
+	r Repository, txpr TranscriptionTxProvider,
+	t Transcriber, sum Summarizer,
 	chUp TranscriptUploader, ch Chatter,
 ) *Service {
 	s := &Service{
@@ -27,7 +28,7 @@ func New(
 		PublisherService: NewPublisher(),
 		ChatService:      NewChatService(ch, r),
 	}
-	s.TranscriptionService = NewTranscriptionService(appCtx, cfg, t, sum, chUp, s.PublisherService, r)
+	s.TranscriptionService = NewTranscriptionService(appCtx, cfg, t, sum, chUp, s.PublisherService, r, txpr)
 	s.MeetingService = NewMeetingService(s.TranscriptionService, r)
 
 	return s

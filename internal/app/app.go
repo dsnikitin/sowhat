@@ -12,6 +12,7 @@ import (
 	"github.com/dsnikitin/sowhat/internal/pkg/httpx"
 	"github.com/dsnikitin/sowhat/internal/pkg/logger"
 	"github.com/dsnikitin/sowhat/internal/repository"
+	"github.com/dsnikitin/sowhat/internal/repository/adapter"
 	"github.com/dsnikitin/sowhat/internal/service"
 	"github.com/dsnikitin/sowhat/internal/transport/telegram"
 )
@@ -48,7 +49,8 @@ func New(cfg *config.Config) *App {
 	saluteSpeech := salute.New(appCtx, cfg.SaluteSpeech, httpClient, authorizer)
 	gigachat := gigachat.New(appCtx, cfg.GigaChat, httpClient, authorizer)
 	r := repository.New(pgDB)
-	s := service.New(appCtx, cfg.Transcription, r, saluteSpeech, gigachat, gigachat, gigachat)
+	txProvider := adapter.NewTranscriptorTxAdapter(r.TranscriptionRepository)
+	s := service.New(appCtx, cfg.Transcription, r, txProvider, saluteSpeech, gigachat, gigachat, gigachat)
 
 	telebot, err := telegram.New(appCtx, cfg.TeleBot, s, s)
 	if err != nil {

@@ -37,10 +37,10 @@ func (h *Bot) OnChat(botCtx telebot.Context) error {
 		case errors.Is(err, errx.ErrNoFilesForQuestion):
 			return botCtx.Send(message.NoFilesForQuestion, telebot.ModeMarkdown)
 		case errors.Is(err, context.DeadlineExceeded):
-			logger.Log.Warnw("Failed to get meeting", "error", err.Error(), "user_id", userID)
+			logger.Log.Warnw("Failed to new chat", "error", err.Error(), "user_id", userID)
 			return botCtx.Send(message.TooBusy, telebot.ModeMarkdown)
 		default:
-			logger.Log.Errorw("Failed to get meeting", "error", err.Error(), "user_id", userID)
+			logger.Log.Errorw("Failed to new chat", "error", err.Error(), "user_id", userID)
 			return botCtx.Send(message.OperationFailed, telebot.ModeMarkdown)
 		}
 	}
@@ -64,10 +64,10 @@ func (h *Bot) OnText(botCtx telebot.Context) error {
 		case errors.Is(err, errx.ErrNoFilesForQuestion):
 			return botCtx.Send(message.NoFilesForQuestion, telebot.ModeMarkdown)
 		case errors.Is(err, context.DeadlineExceeded):
-			logger.Log.Warnw("Failed to get meeting", "error", err.Error(), "user_id", userID)
+			logger.Log.Warnw("Failed to continue chat", "error", err.Error(), "user_id", userID)
 			return botCtx.Send(message.TooBusy, telebot.ModeMarkdown)
 		default:
-			logger.Log.Errorw("Failed to get meeting", "error", err.Error(), "user_id", userID)
+			logger.Log.Errorw("Failed to continue chat", "error", err.Error(), "user_id", userID)
 			return botCtx.Send(message.OperationFailed, telebot.ModeMarkdown)
 		}
 	}

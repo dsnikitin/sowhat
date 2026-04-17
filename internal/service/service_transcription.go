@@ -49,7 +49,10 @@ type TranscriptionRepository interface {
 	UpdateTranscription(ctx context.Context, tr models.Transcription) error
 	UpdateMeeting(ctx context.Context, meeting models.Meeting) error
 	GetNotCompletedTranscriptions(ctx context.Context) iter.Seq2[models.Transcription, error]
-	IsTranscriptionExists(ctx context.Context, meetingID int64) (bool, error)
+}
+
+type TranscriptionTxProvider interface {
+	DoTx(ctx context.Context, fn func(rTx TranscriptionRepository) error) error
 }
 
 type TranscriptionConfig struct {
@@ -74,28 +77,32 @@ type TranscriptionService struct {
 	eg        errgroup.Group
 	inputCh   chan (*models.Transcription)
 	processCh chan (*models.Transcription)
+	retryCh   chan (*models.Transcription)
 	t         Transcriber
 	sum       Summarizer
 	tu        TranscriptUploader
 	p         Publisher
 	r         TranscriptionRepository
+	tx        TranscriptionTxProvider
 }
 
 func NewTranscriptionService(
 	appCtx context.Context, cfg *TranscriptionConfig,
 	t Transcriber, sum Summarizer, ch TranscriptUploader, p Publisher,
-	r TranscriptionRepository,
+	r TranscriptionRepository, tx TranscriptionTxProvider,
 ) *TranscriptionService {
 	s := &TranscriptionService{
 		appCtx:    appCtx,
 		cfg:       cfg,
 		inputCh:   make(chan *models.Transcription, cfg.InputQueueLimit),
 		processCh: make(chan *models.Transcription, cfg.InputQueueLimit),
+		retryCh:   make(chan *models.Transcription, cfg.InputQueueLimit),
 		t:         t,
 		sum:       sum,
 		tu:        ch,
 		p:         p,
 		r:         r,
+		tx:        tx,
 	}
 
 	go func() {
@@ -108,47 +115,105 @@ func NewTranscriptionService(
 	return s
 }
 
+func (s *TranscriptionService) AsyncTranscribe(ctx context.Context, userID int64, file models.MeetingFile, subscriberID uuid.UUID) error {
+	sf := s.t.SupportedFormats()
+	if !slices.Contains(sf, format.FromMIME(file.MIME)) {
+		return errx.NewUnsupportedAudioFormatError(sf, errors.New("file format is unsupported"))
+	}
+
+	minSize, maxSize := s.t.MinAndMaxFileSize()
+	if file.Size < minSize || file.Size > maxSize {
+		return errx.NewUnsupportedFileSizeError(maxSize, maxSize, errors.New("file size is unsupported"))
+	}
+
+	tr := &models.Transcription{
+		Meeting: models.Meeting{
+			ID:     file.MeetingID,
+			UserID: userID,
+		},
+		FileContent: file.Reader,
+		FileMIME:    file.MIME,
+	}
+
+	err := s.tx.DoTx(ctx, func(rTx TranscriptionRepository) error {
+		if err := rTx.CreateTranscription(ctx, tr.Meeting.ID); err != nil {
+			return errors.Wrap(err, "create transcription")
+		}
+
+		if err := s.p.SubscribeForEvent(ctx, file.MeetingID, subscriberID); err != nil {
+			return errors.Wrap(err, "subscribe for meeting")
+		}
+
+		if err := s.putInQueue(tr, s.inputCh); err != nil {
+			s.p.UnsubscribeFromEvent(file.MeetingID, subscriberID)
+			return errors.Wrap(err, "put to input chan")
+		}
+
+		return nil
+	})
+	if err != nil {
+		return errors.Wrap(err, "do tx")
+	}
+
+	logger.Log.Infow("Async transcription successfully started", "meeting_id", tr.Meeting.ID)
+	return nil
+}
+
+func (s *TranscriptionService) RestartNotCompleted() {
+	for tr, err := range s.r.GetNotCompletedTranscriptions(s.appCtx) {
+		if err != nil {
+			logger.Log.Errorw("Failed to get not completed transcriptions", "error", err.Error())
+			return
+		}
+
+		// TODO - нужно хранить подписки в БД, чтобы восстановить
+		// if err := s.p.SubscribeForEvent(tr.Meeting.ID, subscriberID); err != nil {
+		// 	logger.Log.Errorw("Failed to subscribe for event",
+		// 		"meeting_id", "subscriber_id", "error", err.Error())
+		// }
+
+		select {
+		case s.processCh <- &tr:
+		default:
+			logger.Log.Warnw("Failed to restart not completed transcription",
+				"meeting_id", tr.Meeting.ID, "error", err.Error())
+		}
+	}
+}
+
 func (s *TranscriptionService) processor() error {
 	for {
 		select {
 		case <-s.appCtx.Done():
 			return nil
-		case tr := <-s.processCh: // приоритетно берем уже выполняемые
+		case tr := <-s.processCh: // приоритетно берем из основной очереди
 			s.process(tr)
 		default:
 			select {
 			case <-s.appCtx.Done():
 				return nil
-			case tr := <-s.inputCh: // новую берем, если нет выполняемых
-				ctx, cancel := context.WithTimeout(s.appCtx, time.Second*30)
-				defer cancel()
-
-				exists, err := s.r.IsTranscriptionExists(ctx, tr.Meeting.ID)
-				if err != nil {
-					logger.Log.Errorw("Failed to check transcription exists", "meeting_id", tr.Meeting.ID, "error", err.Error())
-					if err = s.putInQueue(tr, s.inputCh); err != nil {
-						logger.Log.Warnw("Failed to put in input queue", "meeting_id", tr.Meeting.ID, "error", err.Error())
-					}
+			case tr := <-s.retryCh: // если нет, то из очереди повторов
+				if time.Now().After(tr.LastAttemptAt.Add(s.cfg.AttemptsInterval)) {
+					s.process(tr)
 					continue
 				}
 
-				if exists {
-					s.process(tr)
+				if err := s.putInQueue(tr, s.retryCh); err != nil {
+					logger.Log.Warnw("Failed to put in retry queue on too early case", "meeting_id", tr.Meeting.ID)
 				}
 			default:
+				select {
+				case <-s.appCtx.Done():
+					return nil
+				case tr := <-s.inputCh: // новую в последнюю очередь
+					s.process(tr)
+				}
 			}
 		}
 	}
 }
 
 func (s *TranscriptionService) process(tr *models.Transcription) {
-	if tr.LastAttemptAt.Add(s.cfg.AttemptsInterval).After(time.Now()) {
-		if err := s.putInQueue(tr, s.processCh); err != nil {
-			logger.Log.Warnw("Failed to put in process queue on too early case", "meeting_id", tr.Meeting.ID)
-		}
-		return
-	}
-
 	stage := s.defineStage(*tr)
 	// Если после выполнения StageFn в PersistFn будет ошибка, то при рестарте будет повтор StageFn,
 	// т.к. обновленное состояние tr не сохранится в БД.
@@ -179,66 +244,6 @@ func (s *TranscriptionService) process(tr *models.Transcription) {
 	if !tr.IsCompleted {
 		if err := s.putInQueue(tr, s.processCh); err != nil {
 			logger.Log.Warnw("Failed to put in process queue for next stage", "meeting_id", tr.Meeting.ID)
-		}
-	}
-}
-
-func (s *TranscriptionService) AsyncTranscribe(ctx context.Context, userID int64, file models.MeetingFile, subscriberID uuid.UUID) error {
-	sf := s.t.SupportedFormats()
-	if !slices.Contains(sf, format.FromMIME(file.MIME)) {
-		return errx.NewUnsupportedAudioFormatError(sf, errors.New("file format is unsupported"))
-	}
-
-	minSize, maxSize := s.t.MinAndMaxFileSize()
-	if file.Size < minSize || file.Size > maxSize {
-		return errx.NewUnsupportedFileSizeError(maxSize, maxSize, errors.New("file size is unsupported"))
-	}
-
-	tr := &models.Transcription{
-		Meeting: models.Meeting{
-			ID:     file.MeetingID,
-			UserID: userID,
-		},
-		FileContent: file.Reader,
-		FileMIME:    file.MIME,
-	}
-
-	if err := s.p.SubscribeForEvent(ctx, file.MeetingID, subscriberID); err != nil {
-		return errors.Wrap(err, "subscribe for meeting")
-	}
-
-	if err := s.r.CreateTranscription(ctx, tr.Meeting.ID); err != nil {
-		s.p.UnsubscribeFromEvent(file.MeetingID, subscriberID)
-		return errors.Wrap(err, "create transcription")
-	}
-
-	if err := s.putInQueue(tr, s.inputCh); err != nil {
-		s.p.UnsubscribeFromEvent(file.MeetingID, subscriberID)
-		return errors.Wrap(err, "put to input chan")
-	}
-
-	logger.Log.Infow("Async transcription successfully started", "meeting_id", tr.Meeting.ID)
-	return nil
-}
-
-func (s *TranscriptionService) RestartNotCompleted() {
-	for tr, err := range s.r.GetNotCompletedTranscriptions(s.appCtx) {
-		if err != nil {
-			logger.Log.Errorw("Failed to get not completed transcriptions", "error", err.Error())
-			return
-		}
-
-		// TODO - нужно хранить подписки в БД, чтобы восстановить
-		// if err := s.p.SubscribeForEvent(tr.Meeting.ID, subscriberID); err != nil {
-		// 	logger.Log.Errorw("Failed to subscribe for event",
-		// 		"meeting_id", "subscriber_id", "error", err.Error())
-		// }
-
-		select {
-		case s.processCh <- &tr:
-		default:
-			logger.Log.Warnw("Failed to restart not completed transcription",
-				"meeting_id", tr.Meeting.ID, "error", err.Error())
 		}
 	}
 }
@@ -393,8 +398,8 @@ func (s *TranscriptionService) canRetry(tr models.Transcription, err error) bool
 }
 
 func logResult(action string, stageName stage.Name, meetingID int64, IsFailed bool, err error) {
-	switch {
-	case err == nil:
+	switch err {
+	case nil:
 		logger.Log.Infow(fmt.Sprintf("%s successfully completed", action),
 			"stage", stageName, "meeting_id", meetingID)
 	default:

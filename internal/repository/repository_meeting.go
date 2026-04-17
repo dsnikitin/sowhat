@@ -6,7 +6,6 @@ import (
 
 	"github.com/dsnikitin/sowhat/internal/infrastructure/db/postgres"
 	"github.com/dsnikitin/sowhat/internal/models"
-	"github.com/dsnikitin/sowhat/internal/pkg/errx"
 	"github.com/jackc/pgx/v5"
 	"github.com/pkg/errors"
 )
@@ -79,50 +78,4 @@ func (r *MeetingRepository) FindMeetings(
 	args := pgx.NamedArgs{"userID": userID, "query": query, "limit": limit, "offset": offset}
 	fieldsPointer := func(m *models.MeetingWithTotal) []any { return m.FieldPointers() }
 	return postgres.Query(ctx, r.db, findMeetingsSQL, args, fieldsPointer)
-}
-
-const updateMeetingSQL = `
-	UPDATE sowhat.meetings
-	SET transcript = @transcript,
-		summary = @summary,
-		chatter_file_id = @chatterFileID,
-		is_transcription_failed = @isTranscriptionFailed,
-		raw_transcript = @rawTranscript
-	WHERE id = @id
-`
-
-func (r *MeetingRepository) UpdateMeeting(ctx context.Context, meeting models.Meeting) error {
-	args := pgx.NamedArgs{
-		"id":                    meeting.ID,
-		"transcript":            meeting.Transcript,
-		"summary":               meeting.Summary,
-		"chatterFileID":         meeting.ChatterFileId,
-		"isTranscriptionFailed": meeting.IsTranscriptionFailed,
-		"rawTranscript":         meeting.RawTranscript,
-	}
-
-	res, err := r.db.Exec(ctx, updateMeetingSQL, args)
-	if err != nil {
-		return errors.Wrap(err, "exec")
-	}
-
-	if res.RowsAffected() == 0 {
-		return errx.ErrNotFound
-	}
-
-	return nil
-}
-
-const getFileIDsSQL = `
-	SELECT chatter_file_id
-	FROM sowhat.meetings
-	WHERE user_id = @userID
-		AND NOT is_transcription_failed
-		AND chatter_file_id IS NOT NULL 
-`
-
-func (r *MeetingRepository) GetFileIDs(ctx context.Context, userID int64) iter.Seq2[string, error] {
-	args := pgx.NamedArgs{"userID": userID}
-	fieldsPointer := func(id *string) []any { return []any{id} }
-	return postgres.Query(ctx, r.db, getFileIDsSQL, args, fieldsPointer)
 }
